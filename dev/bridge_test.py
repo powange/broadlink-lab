@@ -42,7 +42,11 @@ def check(label, cond, extra=""):
 
 def write_profile():
     """Un profil Mantra complet, bâti sur les VRAIES captures (§10)."""
+    # Repartir d'un dossier vide : un profil laissé par une passe interrompue
+    # fausserait les comptes d'appareils, et le test deviendrait instable.
     os.makedirs(PROFILE_DIR, exist_ok=True)
+    for f in os.listdir(PROFILE_DIR):
+        os.remove(os.path.join(PROFILE_DIR, f))
     store = real_seed.store()
     prof = {
         "version": 1,
@@ -336,13 +340,15 @@ def main():
                         "manufacturer": "Mantra", "model": "RF00234"}
         with open(os.path.join(PROFILE_DIR, "chambre.json"), "w") as fh:
             json.dump(p3, fh)
+        # la suite fait tourner 4 serveurs + node + un broker : le sondage à 1 s
+        # peut prendre du retard, d'où la marge
         got = wait_for(lambda: any("/chambre/" in t and t.endswith("/config") for t in seen),
-                       "détection du fichier déposé", 12)
+                       "détection du fichier déposé", 25)
         check("un fichier déposé dans le dossier est détecté tout seul", got)
 
         os.remove(os.path.join(PROFILE_DIR, "chambre.json"))
         got = wait_for(lambda: seen.get("homeassistant/light/chambre/light/config") == "",
-                       "retrait du fichier détecté", 12)
+                       "retrait du fichier détecté", 25)
         check("un fichier supprimé retire l'appareil de HA", got)
 
     finally:

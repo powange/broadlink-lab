@@ -498,6 +498,10 @@ class Bridge:
         d = self.devices.pop(did, None)
         if not d:
             return
+        # ne pas laisser traîner le chemin dans `seen` : la signature comparée
+        # par watch() finirait par mentir
+        self.seen = {p: m for p, m in self.seen.items()
+                     if os.path.basename(p) != f"{did}.json"}
         for i, e in enumerate(d.p["entities"]):
             _, comp, oid = d._discovery(e, i)
             self.client.publish(f"{DISCOVERY_PREFIX}/{comp}/{did}/{oid}/config",
