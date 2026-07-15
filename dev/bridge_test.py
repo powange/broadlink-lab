@@ -351,6 +351,78 @@ def main():
                        "retrait du fichier détecté", 25)
         check("un fichier supprimé retire l'appareil de HA", got)
 
+        # ---- l'IP du Broadlink se règle depuis l'UI du pont aussi
+        code, st = ui("/api/status")
+        check("le pont expose l'IP et sa provenance",
+              st["rm4"].get("ip") is not None and st["rm4"].get("ip_source") in
+              ("ui", "option", "broadcast"),
+              f"{st['rm4'].get('ip')} ({st['rm4'].get('ip_source')})")
+        code, r = ui("/api/device", {"ip": "192.168.0.250"})
+        check("une IP sans appareil -> erreur explicite",
+              r.get("connected") is False and "timeout" in (r.get("error") or "").lower(),
+              (r.get("error") or "")[:44])
+        code, r = ui("/api/device", {"ip": "192.168.0.99"})
+        check("la bonne IP reconnecte à chaud, sans redémarrer l'addon",
+              r.get("connected") is True and r.get("ip_source") == "ui",
+              f"{r.get('model')} @ {r.get('host')}")
+        code, r = ui("/api/discover")
+        check("le pont sait chercher un Broadlink",
+              len(r["devices"]) == 1 and r["devices"][0]["rf"] is True,
+              [d["ip"] for d in r["devices"]])
+
+        # ---- l'UI doit être joignable même si TOUT est cassé : c'est l'outil de
+        # diagnostic. Une boucle de connexion MQTT bloquante l'empêchait de
+        # démarrer tant que le broker ne répondait pas — exactement au moment où
+        # on en a besoin.
+        import urllib.error
+        nb_dir = os.path.join(HERE, ".nobroker_profiles")
+        nb_state = os.path.join(HERE, ".nobroker_state")
+        for d in (nb_dir, nb_state):
+            os.makedirs(d, exist_ok=True)
+            for f in os.listdir(d):
+                os.remove(os.path.join(d, f))
+        nb_env = dict(env, MQTT_PORT="19999",          # aucun broker à ce port
+                      PROFILE_DIR=nb_dir, STATE_DIR=nb_state,
+                      PORT=str(UI_PORT + 1))
+        nb = subprocess.Popen([sys.executable, "-c", boot], env=nb_env,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT,
+                              cwd=os.path.join(ROOT, "rf_bridge"))
+        try:
+            def nbui(path, data=None):
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{UI_PORT + 1}{path}",
+                    data=json.dumps(data).encode() if data else None,
+                    headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return json.loads(r.read())
+
+            up = False
+            for _ in range(40):
+                try:
+                    nbui("/api/status")
+                    up = True
+                    break
+                except Exception:             # noqa: BLE001
+                    time.sleep(0.5)
+            check("l'UI démarre même sans broker MQTT", up)
+            if up:
+                check("elle signale que MQTT est absent", nbui("/api/status")["mqtt"] is False)
+                r = nbui("/api/profiles", {"profile": prof})
+                # ne PAS prétendre que l'appareil est dans HA : rien n'a été publié
+                check("l'import n'annonce pas une publication qui n'a pas eu lieu",
+                      r["ok"] is True and r["published"] is False and r.get("warning"),
+                      (r.get("warning") or "")[:52])
+                st = nbui("/api/status")
+                check("le profil est chargé quand même (il partira à la reconnexion)",
+                      len(st["devices"]) == 1 and st["devices"][0]["entities"],
+                      st["devices"][0]["entities"] if st["devices"] else None)
+        finally:
+            nb.terminate()
+            try:
+                nb.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                nb.kill()
+
     finally:
         proc.terminate()
         try:

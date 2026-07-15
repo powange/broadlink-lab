@@ -38,6 +38,7 @@ import paho.mqtt.client as mqtt
 from flask import Flask, jsonify, request, send_from_directory
 
 import decoder
+import discover
 import profile as profile_mod
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
@@ -45,7 +46,10 @@ logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
 log = logging.getLogger("rf_bridge")
 
-DEVICE_IP = os.environ.get("DEVICE_IP") or None
+# IP de départ, venue des options de l'addon. L'UI peut la changer et la valeur
+# est persistée : un Broadlink est en DHCP, éditer la config de l'addon et le
+# redémarrer à chaque bail renouvelé n'a pas de sens.
+DEVICE_IP_OPTION = os.environ.get("DEVICE_IP") or None
 PROFILE_DIR = os.environ.get("PROFILE_DIR", "/share/broadlink_lab")
 STATE_DIR = os.environ.get("STATE_DIR", "/data")
 DISCOVERY_PREFIX = os.environ.get("DISCOVERY_PREFIX", "homeassistant")
@@ -60,24 +64,60 @@ app = Flask(__name__, static_folder=None)
 bridge = None                     # instance de Bridge, posée par main()
 
 
-# ------------------------------------------------------------ RM4
+# ------------------------------------------------------------ Broadlink
+
+CONFIG_PATH = os.path.join(STATE_DIR, "config.json")
+
+
+def load_config():
+    try:
+        with open(CONFIG_PATH) as fh:
+            return json.load(fh)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def save_config(cfg):
+    os.makedirs(STATE_DIR, exist_ok=True)
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(cfg, fh, indent=2)
+    os.replace(tmp, CONFIG_PATH)
+
+
+def device_ip():
+    """L'UI l'emporte sur l'option de l'addon, qui l'emporte sur le broadcast."""
+    return load_config().get("device_ip") or DEVICE_IP_OPTION
+
 
 def get_device(force=False):
     global _dev
     with _dev_lock:
         if _dev is not None and not force:
             return _dev
-        if DEVICE_IP:
-            dev = broadlink.hello(DEVICE_IP)
-        else:
-            found = broadlink.discover(timeout=5)
-            if not found:
-                raise RuntimeError("aucun Broadlink trouvé — renseigne device_ip")
-            dev = found[0]
-        dev.auth()
-        log.info("RM4 appairé : %s @ %s", dev.model, dev.host[0])
-        _dev = dev
-        return dev
+        ip = device_ip()
+        # Un Broadlink est un appareil WiFi qui dort : le premier paquet le
+        # réveille et se perd. Un seul essai le déclare absent alors qu'il est là.
+        last = None
+        for attempt in (1, 2, 3):
+            try:
+                if ip:
+                    dev = broadlink.hello(ip, timeout=discover.DEFAULT_TIMEOUT)
+                else:
+                    found = broadlink.discover(timeout=discover.DEFAULT_TIMEOUT)
+                    if not found:
+                        raise RuntimeError(
+                            "aucun Broadlink trouvé en broadcast — renseigne l'IP")
+                    dev = found[0]
+                dev.auth()
+                log.info("Broadlink appairé : %s @ %s", dev.model, dev.host[0])
+                _dev = dev
+                return dev
+            except Exception as exc:          # noqa: BLE001
+                last = exc
+                log.info("essai %d échoué (%s) — l'appareil dort peut-être",
+                         attempt, exc)
+        raise RuntimeError(f"{last} (3 essais — l'appareil est-il alimenté ?)")
 
 
 # ------------------------------------------------------------ conversions
@@ -528,10 +568,13 @@ class Bridge:
 @app.get("/api/status")
 def api_status():
     b = bridge
-    rm4 = {"connected": False, "error": None}
+    ip = device_ip()
+    src = ("ui" if load_config().get("device_ip")
+           else "option" if DEVICE_IP_OPTION else "broadcast")
+    rm4 = {"connected": False, "error": None, "ip": ip, "ip_source": src}
     try:
         dev = get_device()
-        rm4 = {"connected": True, "model": dev.model, "host": dev.host[0]}
+        rm4.update(connected=True, model=dev.model, host=dev.host[0])
     except Exception as exc:                  # noqa: BLE001
         rm4["error"] = str(exc)
     return jsonify(
@@ -543,6 +586,37 @@ def api_status():
                   "state": d.state}
                  for d in b.devices.values()],
         errors=b.errors)
+
+
+@app.post("/api/device")
+def api_device():
+    """Change l'IP du Broadlink depuis l'UI, et la persiste."""
+    global _dev
+    body = request.json or {}
+    ip = (body.get("ip") or "").strip() or None
+    cfg = load_config()
+    cfg["device_ip"] = ip
+    save_config(cfg)
+    _dev = None
+    src = "ui" if ip else ("option" if DEVICE_IP_OPTION else "broadcast")
+    try:
+        dev = get_device(force=True)
+        return jsonify(ok=True, connected=True, model=dev.model, host=dev.host[0],
+                       ip=ip, ip_source=src)
+    except Exception as exc:                  # noqa: BLE001
+        return jsonify(ok=True, connected=False, error=str(exc), ip=ip, ip_source=src)
+
+
+@app.get("/api/discover")
+def api_discover():
+    """Cherche les Broadlink. Broadcast d'abord ; unicast si un cidr est fourni."""
+    cidr = request.args.get("cidr")
+    found = discover.broadcast()
+    method = "broadcast"
+    if not found and cidr:
+        found = discover.sweep(cidr)
+        method = "unicast"
+    return jsonify(method=method, devices=found)
 
 
 @app.post("/api/profiles")
@@ -568,7 +642,14 @@ def api_import():
     except OSError as exc:
         return jsonify(error=f"écriture impossible dans {PROFILE_DIR} : {exc}"), 500
     changed = bridge.reload()
-    return jsonify(ok=True, saved=path, device=prof["device"], changed=changed)
+    # Ne PAS prétendre que l'appareil est dans HA : sans MQTT, la discovery n'a
+    # pas été publiée. Le message doit dire ce qui s'est réellement passé.
+    return jsonify(ok=True, saved=path, device=prof["device"], changed=changed,
+                   published=bridge.connected,
+                   warning=None if bridge.connected else
+                   "profil enregistré, mais le pont n'est PAS connecté au broker "
+                   "MQTT : rien n'a été publié. L'appareil apparaîtra dans Home "
+                   "Assistant dès que la connexion sera rétablie.")
 
 
 @app.delete("/api/profiles/<did>")
@@ -644,17 +725,30 @@ def main():
 
     host = os.environ.get("MQTT_HOST", "core-mosquitto")
     port = int(os.environ.get("MQTT_PORT", "1883"))
-    log.info("connexion à %s:%s …", host, port)
-    while True:
-        try:
-            client.connect(host, port, keepalive=60)
-            break
-        except OSError as exc:
-            log.warning("broker injoignable (%s) — nouvelle tentative dans 5 s", exc)
-            time.sleep(5)
-    client.loop_start()
+
+    def mqtt_forever():
+        """
+        Le broker en tâche de fond, et il réessaie sans fin.
+
+        Surtout PAS dans le thread principal : une boucle de connexion bloquante
+        empêchait l'UI de démarrer tant que le broker ne répondait pas. Or c'est
+        exactement quand rien ne marche qu'on a besoin de l'interface pour
+        comprendre pourquoi — elle ne doit dépendre de rien.
+        """
+        while True:
+            try:
+                log.info("connexion au broker %s:%s …", host, port)
+                client.connect(host, port, keepalive=60)
+                client.loop_forever(retry_first_connection=True)
+            except Exception as exc:          # noqa: BLE001
+                bridge.connected = False
+                log.warning("broker injoignable (%s) — nouvelle tentative dans 5 s", exc)
+                time.sleep(5)
+
+    threading.Thread(target=mqtt_forever, daemon=True).start()
     threading.Thread(target=bridge.watch, daemon=True).start()
 
+    # L'UI en premier, toujours : c'est l'outil de diagnostic.
     try:
         from waitress import serve
         log.info("UI sur :%d", PORT)

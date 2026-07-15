@@ -25,6 +25,9 @@
                    color:#04121f; font-weight:600; }
   button.danger:hover { border-color:var(--err); color:var(--err); }
   .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  input { background:var(--bg); color:var(--fg); border:1px solid var(--line);
+          border-radius:6px; padding:6px 8px; font-size:13px; }
+  input:focus { outline:none; border-color:var(--accent); }
   .dim { color:var(--dim); }
   .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
   #bar { display:flex; gap:16px; align-items:center; flex-wrap:wrap;
@@ -55,8 +58,16 @@
   <span id="mqtt"><span class="dot wait"></span>…</span>
   <span id="rm4"><span class="dot wait"></span>…</span>
   <span style="flex:1"></span>
+  <span>
+    <input id="ip" placeholder="IP du Broadlink" style="width:132px"
+           title="Vide = option de l'addon, puis découverte broadcast">
+    <button id="ip-set">Connecter</button>
+    <button id="ip-find" title="Cherche les Broadlink du réseau">Chercher</button>
+  </span>
   <button id="reload">Recharger</button>
 </div>
+<div id="warn" style="margin:0 12px"></div>
+<div id="ip-msg" style="margin:0 12px"></div>
 
 <section>
   <h2>Appareils <span class="hint">publiés dans Home Assistant par MQTT discovery</span></h2>
@@ -94,6 +105,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const msg = (t, k = 'ok') => { $('msg').innerHTML = t ? `<div class="msg ${k}">${t}</div>` : ''; };
+const msgIp = (t, k = 'ok') => { $('ip-msg').innerHTML = t ? `<div class="msg ${k}">${t}</div>` : ''; };
 
 let dir = '';
 
@@ -113,6 +125,13 @@ async function refresh() {
   $('rm4').innerHTML = s.rm4.connected
     ? `<span class="dot on"></span>${esc(s.rm4.model)} <span class="dim">@ ${esc(s.rm4.host)}</span>`
     : `<span class="dot off"></span><span class="dim">Broadlink : ${esc(s.rm4.error || 'non connecté')}</span>`;
+  if (s.rm4.ip !== undefined && $('ip') !== document.activeElement) $('ip').value = s.rm4.ip || '';
+
+  // Sans MQTT, RIEN n'arrive dans HA — et c'est la cause n°1. Le dire fort.
+  $('warn').innerHTML = s.mqtt ? '' : `<div class="msg err">
+    <b>Pas de connexion au broker MQTT.</b> Aucun appareil ne peut apparaître dans
+    Home Assistant tant que ce point n'est pas réglé, quoi que tu importes ici.
+    Vérifie que l'addon <b>Mosquitto broker</b> est démarré.</div>`;
 
   $('devices').innerHTML = s.devices.length ? s.devices.map(d => `
     <div class="card">
@@ -153,6 +172,45 @@ async function refresh() {
        plutôt que d'être ignoré en silence.</div>`;
 }
 
+/* L'IP se règle ici : un Broadlink est en DHCP, éditer les options de l'addon et
+   le redémarrer à chaque bail renouvelé n'aurait pas de sens. */
+$('ip-set').onclick = async () => {
+  $('ip-set').disabled = true;
+  $('rm4').innerHTML = '<span class="dot wait"></span>connexion…';
+  msgIp('Connexion… (jusqu\'à 18 s : ces appareils dorment, on réessaie 3 fois)', 'warn');
+  try {
+    const r = await SEND('device', { ip: $('ip').value.trim() });
+    msgIp(r.connected ? `Connecté à ${esc(r.model)} @ ${esc(r.host)}.`
+                      : `Pas de réponse : ${esc(r.error)}`, r.connected ? 'ok' : 'err');
+    await refresh();
+  } catch (e) { msgIp(esc(e.message), 'err'); }
+  finally { $('ip-set').disabled = false; }
+};
+$('ip').onkeydown = (e) => { if (e.key === 'Enter' && !$('ip-set').disabled) $('ip-set').onclick(); };
+
+$('ip-find').onclick = async () => {
+  $('ip-find').disabled = true;
+  msgIp('Recherche en broadcast…', 'warn');
+  try {
+    let r = await GET('discover');
+    if (!r.devices.length) {
+      const cidr = prompt('Rien en broadcast. Balayer une plage en unicast ?\n\n'
+        + "Plus lent (~30 s), mais nécessaire derrière un NAT.", '192.168.0.0/24');
+      if (!cidr) { msgIp('Aucun appareil trouvé.', 'warn'); return; }
+      msgIp(`Balayage de ${esc(cidr)}… (~30 s)`, 'warn');
+      r = await GET(`discover?cidr=${encodeURIComponent(cidr)}`);
+    }
+    if (!r.devices.length) { msgIp('Aucun appareil trouvé.', 'err'); return; }
+    const rf = r.devices.filter(d => d.rf);
+    const pick = rf[0] || r.devices[0];
+    $('ip').value = pick.ip;
+    msgIp(`${r.devices.length} appareil(s) en ${esc(r.method)} : `
+      + r.devices.map(d => `${esc(d.ip)} — ${esc(d.model)}${d.rf ? ' · RF ✓' : ' · IR seul'}`).join(' | ')
+      + `. ${esc(pick.ip)} pré-rempli — clique « Connecter ».`, rf.length ? 'ok' : 'warn');
+  } catch (e) { msgIp(esc(e.message), 'err'); }
+  finally { $('ip-find').disabled = false; }
+};
+
 $('reload').onclick = async () => {
   $('reload').disabled = true;
   try {
@@ -190,7 +248,12 @@ $('file').onchange = async (ev) => {
   }
   try {
     const r = await SEND('profiles', { profile: prof });
-    msg(`« ${esc(r.device.name)} » importé. Il apparaît dans Home Assistant.`, 'ok');
+    const ents = (prof.entities || []).map(e => e.type).join(', ');
+    msg(r.published
+      ? `« ${esc(r.device.name)} » importé et publié : ${esc(ents)}. `
+        + `Il apparaît dans Home Assistant.`
+      : `« ${esc(r.device.name)} » enregistré (${esc(ents)}), mais ${esc(r.warning)}`,
+      r.published ? 'ok' : 'warn');
     await refresh();
   } catch (e) { msg(esc(e.message), 'err'); }
 };

@@ -20,3 +20,5 @@ dev/.out.profile.json
 shared/__pycache__/
 dev/.dbg*
 dev/.serve*.log
+dev/.nobroker_profiles/
+dev/.nobroker_state/

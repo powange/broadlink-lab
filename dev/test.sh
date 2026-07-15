@@ -23,7 +23,7 @@ cleanup() {
     [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
   done
   rm -f "$STORE" "$CANCEL_STORE" "$META_STORE" "$REAL_STORE"
-  rm -rf "$HERE/.profiles" "$HERE/.bridge_state"
+  rm -rf "$HERE/.profiles" "$HERE/.bridge_state" "$HERE/.nobroker_profiles" "$HERE/.nobroker_state"
 }
 trap cleanup EXIT
 
