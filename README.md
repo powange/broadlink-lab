@@ -56,10 +56,17 @@ Il est **générique** — il ne connaît aucune télécommande, il applique le 
 qu'on lui donne. Une nouvelle télécommande, c'est une session de labo et un fichier
 de plus. **Zéro ligne de code.**
 
+Son UI liste les appareils publiés, permet d'**importer un profil**, et montre
+pourquoi un profil serait refusé. Les profils sont **rechargés à chaud** : déposer
+un fichier suffit, pas de redémarrage.
+
+**Il ne dépend pas de RF Lab.** Le labo sert à *fabriquer* un profil. Si tu en as
+déjà un — partagé, sauvegardé — le pont seul suffit.
+
 ### Ils ne se parlent jamais
 
-Le labo écrit `/share/rf_lab/<appareil>.json`, le pont le lit. Chacun démarre,
-s'arrête et se met à jour sans l'autre.
+Ils s'échangent un fichier dans `/share/broadlink_lab/`. Le dossier n'appartient à
+aucun des deux : chacun démarre, s'arrête et se désinstalle sans l'autre.
 
 ## Prérequis
 
@@ -72,10 +79,20 @@ s'arrête et se met à jour sans l'autre.
 
 1. **Ajoute le dépôt** : bouton ci-dessus, ou *Paramètres → Modules complémentaires
    → Boutique → ⋮ → Dépôts* et colle `https://github.com/powange/broadlink-lab`.
-2. **Installe `RF Lab`**, renseigne l'IP de ton Broadlink dans les options (ou
-   laisse vide et cherche-le depuis l'UI), démarre, ouvre-le dans la sidebar.
+
+**Tu as déjà un profil** (partagé, ou sauvegardé d'une installation précédente) :
+
+2. **Installe `RF Bridge`**, démarre-le, ouvre-le dans la sidebar.
+3. **« Importer un profil… »**. L'appareil apparaît dans HA. C'est tout — le labo
+   est inutile.
+
+**Tu pars de zéro** et dois décoder ta télécommande :
+
+2. **Installe `RF Lab`**, renseigne l'IP de ton Broadlink (ou cherche-le depuis
+   l'UI), démarre, ouvre-le dans la sidebar.
 3. **Fais ton reverse** (voir ci-dessous), puis « Enregistrer dans /share ».
-4. **Installe `RF Bridge`**, démarre-le. L'appareil apparaît dans HA.
+4. **Installe `RF Bridge`** : il détecte le profil tout seul.
+5. Le reverse fini, **désinstalle le labo**. Les profils restent.
 
 ## Une session de reverse, en pratique
 

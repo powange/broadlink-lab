@@ -1,0 +1,164 @@
+{
+  "checksum": {
+    "k": 85,
+    "kind": "sub8"
+  },
+  "device": {
+    "id": "mantra_nenufar",
+    "manufacturer": "Mantra",
+    "model": "RF00234",
+    "name": "Mantra Nenufar"
+  },
+  "entities": [
+    {
+      "brightness": {
+        "field": "lum",
+        "max": 11,
+        "min": 1
+      },
+      "color_temp": {
+        "field": "cct",
+        "kelvin": [
+          3000,
+          5000
+        ],
+        "max": 7,
+        "min": 1
+      },
+      "id": "light",
+      "name": "Lumière",
+      "power": "light",
+      "type": "light"
+    },
+    {
+      "direction": "reverse",
+      "id": "fan",
+      "name": "Ventilateur",
+      "percentage": {
+        "field": "speed",
+        "max": 8,
+        "min": 1
+      },
+      "power": "fan",
+      "preset": {
+        "field": "mode",
+        "options": [
+          "normal",
+          "nuit",
+          "eco"
+        ]
+      },
+      "type": "fan"
+    },
+    {
+      "field": "timer",
+      "id": "timer",
+      "name": "Minuterie",
+      "scale": 2,
+      "type": "number",
+      "unit": "min"
+    }
+  ],
+  "fields": [
+    {
+      "end": 26,
+      "msb_first": true,
+      "name": "preambule",
+      "role": "const",
+      "start": 0
+    },
+    {
+      "end": 32,
+      "msb_first": true,
+      "name": "cmd",
+      "role": "const",
+      "start": 26
+    },
+    {
+      "end": 33,
+      "max": 1,
+      "min": 0,
+      "msb_first": true,
+      "name": "light",
+      "role": "data",
+      "start": 32
+    },
+    {
+      "end": 36,
+      "max": 7,
+      "min": 1,
+      "msb_first": true,
+      "name": "cct",
+      "role": "data",
+      "start": 33
+    },
+    {
+      "end": 40,
+      "max": 11,
+      "min": 1,
+      "msb_first": true,
+      "name": "lum",
+      "role": "data",
+      "start": 36
+    },
+    {
+      "end": 41,
+      "max": 1,
+      "min": 0,
+      "msb_first": true,
+      "name": "fan",
+      "role": "data",
+      "start": 40
+    },
+    {
+      "end": 42,
+      "max": 1,
+      "min": 0,
+      "msb_first": true,
+      "name": "reverse",
+      "role": "data",
+      "start": 41
+    },
+    {
+      "end": 44,
+      "max": 2,
+      "min": 0,
+      "msb_first": true,
+      "name": "mode",
+      "role": "data",
+      "start": 42
+    },
+    {
+      "end": 48,
+      "max": 8,
+      "min": 1,
+      "msb_first": true,
+      "name": "speed",
+      "role": "data",
+      "start": 44
+    },
+    {
+      "end": 56,
+      "max": 255,
+      "min": 0,
+      "msb_first": true,
+      "name": "timer",
+      "role": "data",
+      "start": 48
+    },
+    {
+      "end": 64,
+      "msb_first": true,
+      "name": "crc",
+      "role": "crc",
+      "start": 56
+    }
+  ],
+  "rf": {
+    "frequency": 433.92,
+    "gap": 2000,
+    "reference_b64": "scAoAwCfBgAEAAFrBAAB0goXCBcJFwoXCBcJFwlXCRcKFwgXCRcJGAgXCBgJFgoXCBgIFwkYCBcIGBgJGAcIGBgIGAgYCAgYFwkYCAcZCBgIGAcYGAkHGQcYBxkXChcIBxkIGBgIBxkIGBcJBxkHGAgYCBgIGBcJCBgHGAkYCBgHGAgYCBgIGAgXCRgIGAcYCRgXCRcICBgIGAgYGAgIVAcYCRgHGAgYCRcIGAgXCBgJGAgXCBgJGAcYCBgYCBgICBgYBxgJGAgHGBgJGAgHGAkYBxgIGBgICBgIGAcYGAkYCAcYCRgYCAcYCRcXCQgYCBgIGAgYBxgYCQgYBxgJFwgYCBgIFwkYCBgHGAkYBxkHGAkXGAgYCAgYCBgIGBcJCFMIGAgYCBgHGAkYCBcIGAgYCRcIGAgXCRgIGAcYGAkXCAgYGAgYCRcICBgXCRgIBxkIGAgYBxgYCAkYBxgIGBcKFwgIGAgYGAgIFwgYGAkHGQcYCRgHGAcZGAgIGAcYCBgJGAcYCBgJGAcYCBgIGAgYBxgJFxgJFwgIGAkXCBgYCAhTCBgJFwgYCBgIFwkYBxgIGAkYBxgIGAgYCBgHGBgJFwkIFxgIGAkXCQcYGAkXCAgYCBkHGAgYFwkIGAgYBxgYCRgIBxgIGRYJCBgHGBgJBxkHGAkYBxgIGBgJBxgIGAcZCBgIGAcYCRgHGAgYCBgIGAgYBxgYCRgIBxgJGAcYGAgJUwcYCRgHGAgYBxgJGAcZBxgJGAcYCBgIGAgYCBgXCBgJCBgXCBgJGAgHGBgJFwkHGAgYCBgIGBgHCRgIFwgYGAkYCAcYCBgXCQgYBxgYCQgYBxgJGAgXCBgYCAgYCBgHGAkYCBgHGAkYBxgIGAgXCRgIGAcYGAkYCAcYCRgHGBgICFQHGAkXCBgIGAcZCBgIGAcYCRgIFwgYCRcIGAgYFwgYCQgYGAcYCRgIBxgYCBgJBxgIGAgYCBgYCAgYCBgHGBgJFwkHGAgYFwoHGAgYFwkIGAgXCRcJFwgYGAgIGAgYBxkIGAgYBxgJGAcYCBgIFwkYCBgHGBgJGAgHGAkYBxgYCAgABdw=",
+    "reference_name": "light1_lum10_cct3000_fan0_v0"
+  },
+  "version": 1
+}

@@ -26,6 +26,7 @@ import decoder  # noqa: E402
 import real_seed  # noqa: E402
 
 PORT = int(os.environ.get("MQTT_TEST_PORT", "18830"))
+UI_PORT = PORT + 1
 PROFILE_DIR = os.path.join(HERE, ".profiles")
 STATE_DIR = os.path.join(HERE, ".bridge_state")
 
@@ -106,6 +107,7 @@ def main():
                MQTT_HOST="127.0.0.1", MQTT_PORT=str(PORT),
                PROFILE_DIR=PROFILE_DIR, STATE_DIR=STATE_DIR,
                DEVICE_IP="192.168.0.99", LOG_LEVEL="info",
+               PORT=str(UI_PORT), WATCH_SECONDS="1",
                PYTHONPATH=f"{HERE}:{os.path.join(ROOT, 'rf_bridge')}")
     # substitution du faux RM4 sans toucher à bridge.py
     boot = (
@@ -272,6 +274,76 @@ def main():
             check("l'état sauvegardé porte bien les dernières commandes",
                   saved.get("mode") == 2 and saved.get("timer") == 10
                   and saved.get("fan") == 0, saved)
+
+        # ---- l'UI : c'est elle qui rend le pont autonome. Sans elle, déposer
+        # un profil imposerait d'installer RF Lab juste pour écrire un fichier.
+        import urllib.request
+
+        def ui(path, data=None, method=None):
+            url = f"http://127.0.0.1:{UI_PORT}{path}"
+            req = urllib.request.Request(
+                url, method=method,
+                data=json.dumps(data).encode() if data is not None else None,
+                headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    return r.status, json.loads(r.read())
+            except urllib.error.HTTPError as e:
+                return e.code, json.loads(e.read())
+
+        got = wait_for(lambda: ui("/api/status")[0] == 200, "UI joignable", 20)
+        check("l'UI du pont répond", got)
+        code, st = ui("/api/status")
+        check("elle liste l'appareil chargé",
+              len(st["devices"]) == 1 and st["devices"][0]["id"] == "mantra_nenufar",
+              [d["id"] for d in st["devices"]])
+        check("elle montre MQTT et le Broadlink",
+              st["mqtt"] is True and st["rm4"]["connected"] is True,
+              f"mqtt={st['mqtt']} rm4={st['rm4'].get('model')}")
+        check("la page HTML est servie",
+              urllib.request.urlopen(f"http://127.0.0.1:{UI_PORT}/", timeout=10).status == 200)
+
+        # ---- import d'un 2e appareil SANS RF Lab, sans redémarrage
+        p2 = json.loads(json.dumps(prof))
+        p2["device"] = {"id": "salon", "name": "Ventilo salon",
+                        "manufacturer": "Mantra", "model": "RF00234"}
+        code, r = ui("/api/profiles", {"profile": p2})
+        check("un profil s'importe depuis l'UI", code == 200 and r.get("ok"), r)
+        got = wait_for(lambda: any("/salon/" in t and t.endswith("/config") for t in seen),
+                       "discovery du 2e appareil")
+        check("le 2e appareil est publié dans HA sans redémarrage", got)
+        check("les 2 appareils coexistent", len(ui("/api/status")[1]["devices"]) == 2,
+              [d["id"] for d in ui("/api/status")[1]["devices"]])
+
+        # ---- un profil invalide est refusé AVEC sa raison
+        code, r = ui("/api/profiles", {"profile": {"version": 99}})
+        check("un profil invalide est refusé à l'import", code == 400 and "invalide" in r.get("error", ""),
+              r.get("error", "")[:60])
+
+        # ---- retrait : l'appareil doit disparaître de HA
+        seen.pop("homeassistant/light/salon/light/config", None)
+        code, r = ui("/api/profiles/salon", method="DELETE")
+        check("un appareil se retire depuis l'UI", code == 200 and r.get("ok"), r)
+        got = wait_for(lambda: seen.get("homeassistant/light/salon/light/config") == "",
+                       "config vide = HA retire l'appareil")
+        check("HA reçoit une config vide (c'est ce qui efface l'appareil)", got,
+              repr(seen.get("homeassistant/light/salon/light/config")))
+        check("il ne reste que le premier", len(ui("/api/status")[1]["devices"]) == 1)
+
+        # ---- rechargement à chaud : déposer un fichier suffit
+        p3 = json.loads(json.dumps(prof))
+        p3["device"] = {"id": "chambre", "name": "Ventilo chambre",
+                        "manufacturer": "Mantra", "model": "RF00234"}
+        with open(os.path.join(PROFILE_DIR, "chambre.json"), "w") as fh:
+            json.dump(p3, fh)
+        got = wait_for(lambda: any("/chambre/" in t and t.endswith("/config") for t in seen),
+                       "détection du fichier déposé", 12)
+        check("un fichier déposé dans le dossier est détecté tout seul", got)
+
+        os.remove(os.path.join(PROFILE_DIR, "chambre.json"))
+        got = wait_for(lambda: seen.get("homeassistant/light/chambre/light/config") == "",
+                       "retrait du fichier détecté", 12)
+        check("un fichier supprimé retire l'appareil de HA", got)
 
     finally:
         proc.terminate()

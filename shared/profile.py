@@ -4,7 +4,7 @@ Le profil d'appareil — le seul lien entre les deux addons.
 
 RF Lab en produit un à la fin d'une session de reverse ; RF Bridge le lit et en
 fait un appareil Home Assistant. Les deux addons ne se parlent jamais : ils
-s'échangent un fichier dans /share/rf_lab/.
+s'échangent un fichier dans /share/broadlink_lab/.
 
 Un profil contient TOUT ce qu'il faut pour piloter l'appareil, y compris la
 capture de référence — c'est elle qui porte le préambule et l'ID appairé de la

@@ -1,10 +1,18 @@
 #!/usr/bin/env python3
 """
-RF Bridge — les profils de RF Lab deviennent des appareils Home Assistant.
+RF Bridge — des profils d'appareil deviennent des appareils Home Assistant.
 
-Générique par construction : le pont ne connaît aucune télécommande. Il lit un
-profil (/share/rf_lab/*.json), publie les entités en MQTT discovery, et traduit
+Générique par construction : le pont ne connaît aucune télécommande. Il lit les
+profils de /share/broadlink_lab/, publie les entités en MQTT discovery, et traduit
 chaque commande HA en trame RF.
+
+**Il ne dépend pas de RF Lab.** Le labo sert à FABRIQUER un profil ; s'il en
+existe déjà un (partagé, sauvegardé), le pont suffit — son UI permet de l'importer.
+Le dossier partagé est neutre : ni l'un ni l'autre ne le possède.
+
+Les profils sont rechargés à chaud : déposer un fichier suffit, pas de
+redémarrage. Sans ça, « ajouter un appareil » imposerait d'aller redémarrer
+l'addon depuis le panneau HA, sans que rien ne le dise.
 
 DEUX CONTRAINTES DICTENT TOUTE L'ARCHITECTURE :
 
@@ -27,6 +35,7 @@ import time
 
 import broadlink
 import paho.mqtt.client as mqtt
+from flask import Flask, jsonify, request, send_from_directory
 
 import decoder
 import profile as profile_mod
@@ -37,13 +46,18 @@ logging.basicConfig(level=getattr(logging, LOG_LEVEL, logging.INFO),
 log = logging.getLogger("rf_bridge")
 
 DEVICE_IP = os.environ.get("DEVICE_IP") or None
-PROFILE_DIR = os.environ.get("PROFILE_DIR", "/share/rf_lab")
+PROFILE_DIR = os.environ.get("PROFILE_DIR", "/share/broadlink_lab")
 STATE_DIR = os.environ.get("STATE_DIR", "/data")
 DISCOVERY_PREFIX = os.environ.get("DISCOVERY_PREFIX", "homeassistant")
 BASE = os.environ.get("TOPIC_BASE", "rf_bridge")
+PORT = int(os.environ.get("PORT", "8098"))
+WATCH_SECONDS = float(os.environ.get("WATCH_SECONDS", "3"))
 
 _dev = None
 _dev_lock = threading.Lock()
+
+app = Flask(__name__, static_folder=None)
+bridge = None                     # instance de Bridge, posée par main()
 
 
 # ------------------------------------------------------------ RM4
@@ -387,46 +401,204 @@ class Device:
         return ch
 
 
-# ------------------------------------------------------------ chargement
+# ------------------------------------------------------------ le pont
 
-def load_profiles():
-    wanted = [p for p in (os.environ.get("PROFILES") or "").split(",") if p]
-    out = []
+def read_profile(path):
+    """Lit et valide un fichier. Retourne (profil|None, [erreurs])."""
     try:
-        files = sorted(f for f in os.listdir(PROFILE_DIR) if f.endswith(".json"))
-    except FileNotFoundError:
-        log.error("%s n'existe pas — lance RF Lab et exporte un profil", PROFILE_DIR)
-        return out
-    if not files:
-        log.error("aucun profil dans %s — lance RF Lab et exporte un profil", PROFILE_DIR)
-    for name in files:
-        path = os.path.join(PROFILE_DIR, name)
+        with open(path) as fh:
+            p = json.load(fh)
+    except json.JSONDecodeError as exc:
+        return None, [f"JSON invalide : {exc}"]
+    except OSError as exc:
+        return None, [f"illisible : {exc}"]
+    errs = profile_mod.validate(p)
+    return (None, errs) if errs else (p, [])
+
+
+class Bridge:
+    """
+    Tient les appareils, le broker, et surveille le dossier des profils.
+
+    Le rechargement à chaud n'est pas un luxe : sans lui, ajouter un appareil
+    imposerait de redémarrer l'addon depuis le panneau HA — et rien dans l'UI
+    ne le dirait.
+    """
+
+    def __init__(self, client):
+        self.client = client
+        self.devices = {}         # id -> Device
+        self.errors = {}          # fichier -> [erreurs] (pour l'UI)
+        self.seen = {}            # fichier -> mtime
+        self.lock = threading.Lock()
+        self.connected = False
+
+    def wanted(self):
+        w = [p for p in (os.environ.get("PROFILES") or "").split(",") if p]
+        return set(w)
+
+    def scan(self):
+        """Ce qui est sur disque, maintenant."""
+        out, errors = {}, {}
         try:
-            with open(path) as fh:
-                p = json.load(fh)
-        except Exception as exc:              # noqa: BLE001
-            log.error("%s illisible : %s", name, exc)
-            continue
-        errs = profile_mod.validate(p)
-        if errs:
-            # un profil bancal ne se verrait qu'au moment où le ventilo n'obéit
-            # pas : on refuse de le charger et on dit pourquoi
-            log.error("%s invalide, ignoré : %s", name, "; ".join(errs))
-            continue
-        if wanted and p["device"]["id"] not in wanted:
-            log.info("%s ignoré (pas dans l'option `profiles`)", name)
-            continue
-        out.append(p)
-        log.info("profil chargé : %s (%s)", p["device"]["id"], p["device"]["name"])
-    return out
+            files = sorted(f for f in os.listdir(PROFILE_DIR) if f.endswith(".json"))
+        except FileNotFoundError:
+            return out, errors
+        for name in files:
+            path = os.path.join(PROFILE_DIR, name)
+            prof, errs = read_profile(path)
+            if errs:
+                # un profil bancal ne se verrait qu'au moment où l'appareil
+                # n'obéit pas : on le refuse et on dit pourquoi, dans l'UI
+                errors[name] = errs
+                continue
+            w = self.wanted()
+            if w and prof["device"]["id"] not in w:
+                errors[name] = ["ignoré : absent de l'option `profiles`"]
+                continue
+            out[prof["device"]["id"]] = (path, prof)
+        return out, errors
+
+    def reload(self):
+        """Applique le disque : ajoute, met à jour, retire."""
+        with self.lock:
+            found, errors = self.scan()
+            self.errors = errors
+            changed = []
+
+            for did in list(self.devices):
+                if did not in found:
+                    self.remove_device(did)
+                    changed.append(f"-{did}")
+
+            for did, (path, prof) in found.items():
+                mtime = os.path.getmtime(path)
+                if did in self.devices and self.seen.get(path) == mtime:
+                    continue
+                self.seen[path] = mtime
+                d = Device(prof, self.client)
+                # garder l'état courant si l'appareil existait déjà : recharger
+                # un profil ne doit pas réémettre un état arbitraire
+                if did in self.devices:
+                    old = self.devices[did].state
+                    d.state.update({k: v for k, v in old.items() if k in d.state})
+                self.devices[did] = d
+                if self.connected:
+                    d.publish_discovery()
+                    d.subscribe()
+                    d.publish_state()
+                changed.append(f"+{did}")
+
+            if changed:
+                log.info("profils rechargés : %s", " ".join(changed))
+            return changed
+
+    def remove_device(self, did):
+        """Retire l'appareil de HA : une config vide et retenue l'efface."""
+        d = self.devices.pop(did, None)
+        if not d:
+            return
+        for i, e in enumerate(d.p["entities"]):
+            _, comp, oid = d._discovery(e, i)
+            self.client.publish(f"{DISCOVERY_PREFIX}/{comp}/{did}/{oid}/config",
+                                "", retain=True)
+        self.client.unsubscribe(d.t("#"))
+        log.info("[%s] retiré de HA", did)
+
+    def watch(self):
+        """Surveille le dossier. Un simple sondage : pas de dépendance en plus."""
+        while True:
+            time.sleep(WATCH_SECONDS)
+            try:
+                found, _ = self.scan()
+                sig = {p: os.path.getmtime(p) for p, _ in found.values()}
+                if sig != {p: m for p, m in self.seen.items() if p in sig} \
+                        or set(found) != set(self.devices):
+                    self.reload()
+            except Exception:                 # noqa: BLE001
+                log.exception("surveillance des profils")
+
+
+# ------------------------------------------------------------ UI (ingress)
+
+@app.get("/api/status")
+def api_status():
+    b = bridge
+    rm4 = {"connected": False, "error": None}
+    try:
+        dev = get_device()
+        rm4 = {"connected": True, "model": dev.model, "host": dev.host[0]}
+    except Exception as exc:                  # noqa: BLE001
+        rm4["error"] = str(exc)
+    return jsonify(
+        mqtt=b.connected, rm4=rm4, dir=PROFILE_DIR,
+        devices=[{"id": d.id, "name": d.p["device"]["name"],
+                  "manufacturer": d.p["device"].get("manufacturer"),
+                  "model": d.p["device"].get("model"),
+                  "entities": [e["type"] for e in d.p["entities"]],
+                  "state": d.state}
+                 for d in b.devices.values()],
+        errors=b.errors)
+
+
+@app.post("/api/profiles")
+def api_import():
+    """
+    Importe un profil. C'est ce qui rend le pont autonome : sans ça, déposer un
+    profil imposerait d'installer RF Lab juste pour écrire un fichier.
+    """
+    body = request.json or {}
+    prof = body.get("profile")
+    if not isinstance(prof, dict):
+        return jsonify(error='corps attendu : {"profile": {...}}'), 400
+    errs = profile_mod.validate(prof)
+    if errs:
+        return jsonify(error="profil invalide : " + "; ".join(errs)), 400
+    try:
+        os.makedirs(PROFILE_DIR, exist_ok=True)
+        path = os.path.join(PROFILE_DIR, f"{prof['device']['id']}.json")
+        tmp = path + ".tmp"
+        with open(tmp, "w") as fh:
+            json.dump(prof, fh, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError as exc:
+        return jsonify(error=f"écriture impossible dans {PROFILE_DIR} : {exc}"), 500
+    changed = bridge.reload()
+    return jsonify(ok=True, saved=path, device=prof["device"], changed=changed)
+
+
+@app.delete("/api/profiles/<did>")
+def api_delete(did):
+    path = os.path.join(PROFILE_DIR, f"{did}.json")
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        return jsonify(error="profil introuvable"), 404
+    except OSError as exc:
+        return jsonify(error=str(exc)), 500
+    bridge.reload()
+    return jsonify(ok=True)
+
+
+@app.post("/api/reload")
+def api_reload():
+    return jsonify(ok=True, changed=bridge.reload())
+
+
+@app.get("/")
+def index():
+    return send_from_directory("www", "index.html")
+
+
+@app.get("/<path:path>")
+def static_files(path):
+    return send_from_directory("www", path)
 
 
 # ------------------------------------------------------------ main
 
 def main():
-    profs = load_profiles()
-    if not profs:
-        sys.exit("aucun profil exploitable — rien à publier")
+    global bridge
 
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id="rf_bridge", clean_session=True)
@@ -435,27 +607,36 @@ def main():
         client.username_pw_set(user, os.environ.get("MQTT_PASSWORD"))
     client.will_set(f"{BASE}/status", "offline", retain=True)
 
-    devices = {}
+    bridge = Bridge(client)
 
     def on_connect(c, u, flags, rc, props=None):
         log.info("connecté au broker (rc=%s)", rc)
+        bridge.connected = True
         c.publish(f"{BASE}/status", "online", retain=True)
-        for d in devices.values():
+        for d in bridge.devices.values():
             d.publish_discovery()
             d.subscribe()
             d.publish_state()
 
+    def on_disconnect(c, u, flags, rc, props=None):
+        bridge.connected = False
+        log.warning("déconnecté du broker (rc=%s)", rc)
+
     def on_message(c, u, msg):
         payload = msg.payload.decode(errors="replace")
-        for d in devices.values():
+        for d in list(bridge.devices.values()):
             if msg.topic.startswith(f"{BASE}/{d.id}/"):
                 d.on_message(msg.topic, payload)
 
     client.on_connect = on_connect
+    client.on_disconnect = on_disconnect
     client.on_message = on_message
 
-    for p in profs:
-        devices[p["device"]["id"]] = Device(p, client)
+    bridge.reload()
+    if not bridge.devices:
+        # ne PAS sortir : l'UI doit rester joignable pour importer un profil.
+        # Sortir ferait boucler l'addon en redémarrage, sans rien expliquer.
+        log.warning("aucun profil dans %s — importe-en un depuis l'UI", PROFILE_DIR)
 
     host = os.environ.get("MQTT_HOST", "core-mosquitto")
     port = int(os.environ.get("MQTT_PORT", "1883"))
@@ -467,8 +648,16 @@ def main():
         except OSError as exc:
             log.warning("broker injoignable (%s) — nouvelle tentative dans 5 s", exc)
             time.sleep(5)
+    client.loop_start()
+    threading.Thread(target=bridge.watch, daemon=True).start()
 
-    client.loop_forever(retry_first_connection=True)
+    try:
+        from waitress import serve
+        log.info("UI sur :%d", PORT)
+        serve(app, host="0.0.0.0", port=PORT, threads=4, channel_timeout=30)
+    except ImportError:
+        log.warning("waitress absent — serveur de développement Flask")
+        app.run(host="0.0.0.0", port=PORT, threaded=True)
 
 
 if __name__ == "__main__":

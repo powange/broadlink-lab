@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RF Bridge</title>
+<style>
+  :root {
+    --bg:#10141a; --panel:#171d26; --panel2:#1e2632; --line:#2b3543;
+    --fg:#e6edf5; --dim:#8b9bb0; --accent:#3aa0ff; --warn:#ffb020;
+    --ok:#35c17a; --err:#ff5c5c;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+  h2 { font-size:15px; margin:0 0 12px; letter-spacing:.3px; }
+  h2 .hint { font-weight:400; color:var(--dim); font-size:12px; margin-left:8px; }
+  section { background:var(--panel); border:1px solid var(--line);
+            border-radius:10px; padding:16px; margin:12px; }
+  button { background:var(--panel2); color:var(--fg); border:1px solid var(--line);
+           border-radius:6px; padding:7px 13px; cursor:pointer; font-size:13px; }
+  button:hover:not(:disabled) { border-color:var(--accent); }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent);
+                   color:#04121f; font-weight:600; }
+  button.danger:hover { border-color:var(--err); color:var(--err); }
+  .row { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .dim { color:var(--dim); }
+  .mono { font-family:ui-monospace,Menlo,Consolas,monospace; }
+  #bar { display:flex; gap:16px; align-items:center; flex-wrap:wrap;
+         background:var(--panel); border-bottom:1px solid var(--line);
+         padding:10px 16px; position:sticky; top:0; z-index:20; }
+  .dot { width:8px; height:8px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .dot.on{background:var(--ok);} .dot.off{background:var(--err);} .dot.wait{background:var(--warn);}
+  .pill { display:inline-block; padding:1px 7px; border-radius:20px;
+          background:var(--panel2); border:1px solid var(--line);
+          font-size:11px; color:var(--dim); margin-right:4px; }
+  .card { background:var(--panel2); border:1px solid var(--line); border-radius:8px;
+          padding:12px; margin-bottom:10px; }
+  .card h3 { margin:0 0 4px; font-size:14px; }
+  .card .id { font-size:11px; color:var(--dim); }
+  .msg { padding:8px 11px; border-radius:6px; font-size:13px; margin-top:10px; }
+  .msg.ok{background:#123726;color:var(--ok);} .msg.err{background:#3a1a1a;color:var(--err);}
+  .msg.warn{background:#3a2f14;color:var(--warn);}
+  .empty { color:var(--dim); font-size:13px; padding:12px 0; }
+  pre { background:var(--bg); border:1px solid var(--line); border-radius:6px;
+        padding:8px; overflow-x:auto; font-size:11px; margin:8px 0 0;
+        font-family:ui-monospace,Menlo,Consolas,monospace; }
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <strong>RF Bridge</strong>
+  <span id="mqtt"><span class="dot wait"></span>…</span>
+  <span id="rm4"><span class="dot wait"></span>…</span>
+  <span style="flex:1"></span>
+  <button id="reload">Recharger</button>
+</div>
+
+<section>
+  <h2>Appareils <span class="hint">publiés dans Home Assistant par MQTT discovery</span></h2>
+  <div id="devices"></div>
+  <div class="row" style="margin-top:12px">
+    <button id="import" class="primary">Importer un profil…</button>
+    <input id="file" type="file" accept="application/json,.json" hidden>
+    <span class="dim" style="font-size:12px">
+      Un profil produit par RF Lab, ou partagé par quelqu'un qui a le même appareil.
+    </span>
+  </div>
+  <div id="msg"></div>
+</section>
+
+<section>
+  <h2>Profils refusés <span class="hint">présents dans le dossier mais pas chargés</span></h2>
+  <div id="errors"></div>
+</section>
+
+<script>
+'use strict';
+/* URL relatives : l'ingress sert la page sous /api/hassio_ingress/<token>/ et
+   strippe ce préfixe. Un '/' initial casserait tout. */
+const GET = (p) => fetch('api/' + p).then(r => r.json());
+const SEND = (p, body, method = 'POST') =>
+  fetch('api/' + p, {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(async r => {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  });
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const msg = (t, k = 'ok') => { $('msg').innerHTML = t ? `<div class="msg ${k}">${t}</div>` : ''; };
+
+let dir = '';
+
+async function refresh() {
+  let s;
+  try {
+    s = await GET('status');
+  } catch (e) {
+    $('mqtt').innerHTML = `<span class="dot off"></span><span class="dim">${esc(e.message)}</span>`;
+    return;
+  }
+  dir = s.dir;
+
+  $('mqtt').innerHTML = s.mqtt
+    ? '<span class="dot on"></span>MQTT'
+    : '<span class="dot off"></span><span class="dim">MQTT déconnecté</span>';
+  $('rm4').innerHTML = s.rm4.connected
+    ? `<span class="dot on"></span>${esc(s.rm4.model)} <span class="dim">@ ${esc(s.rm4.host)}</span>`
+    : `<span class="dot off"></span><span class="dim">Broadlink : ${esc(s.rm4.error || 'non connecté')}</span>`;
+
+  $('devices').innerHTML = s.devices.length ? s.devices.map(d => `
+    <div class="card">
+      <div class="row" style="align-items:flex-start">
+        <div style="flex:1">
+          <h3>${esc(d.name)}</h3>
+          <div class="id mono">${esc(d.id)} · ${esc(d.manufacturer || '?')} ${esc(d.model || '')}</div>
+          <div style="margin-top:6px">${d.entities.map(e => `<span class="pill">${esc(e)}</span>`).join('')}</div>
+        </div>
+        <button class="danger" data-del="${esc(d.id)}">Retirer</button>
+      </div>
+      <pre>${esc(JSON.stringify(d.state))}</pre>
+    </div>`).join('')
+    : `<div class="empty">Aucun appareil. Importe un profil ci-dessous — ou dépose
+       son JSON dans <span class="mono">${esc(dir)}</span>, il sera détecté en
+       quelques secondes.</div>`;
+
+  $('devices').querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm(`Retirer « ${b.dataset.del} » ?\n\nSon profil sera supprimé du `
+      + `dossier et l'appareil disparaîtra de Home Assistant. Les captures et le `
+      + `reverse ne sont PAS perdus si tu as gardé le fichier ailleurs.`)) return;
+    try {
+      await SEND('profiles/' + encodeURIComponent(b.dataset.del), undefined, 'DELETE');
+      msg('Appareil retiré.', 'ok');
+      refresh();
+    } catch (e) { msg(esc(e.message), 'err'); }
+  });
+
+  const errs = Object.entries(s.errors || {});
+  $('errors').innerHTML = errs.length ? errs.map(([f, list]) => `
+    <div class="card">
+      <h3 class="mono" style="color:var(--warn)">${esc(f)}</h3>
+      <ul style="margin:6px 0 0; padding-left:18px; font-size:13px">
+        ${list.map(e => `<li>${esc(e)}</li>`).join('')}
+      </ul>
+    </div>`).join('')
+    : `<div class="empty">Aucun. Un profil invalide serait listé ici avec sa raison —
+       plutôt que d'être ignoré en silence.</div>`;
+}
+
+$('reload').onclick = async () => {
+  $('reload').disabled = true;
+  try {
+    const r = await SEND('reload');
+    msg(r.changed.length ? `Rechargé : ${r.changed.join(' ')}` : 'Rien de neuf.', 'ok');
+    await refresh();
+  } catch (e) { msg(esc(e.message), 'err'); }
+  finally { $('reload').disabled = false; }
+};
+
+$('import').onclick = () => $('file').click();
+$('file').onchange = async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  // Lire AVANT de vider l'input : remettre .value à '' libère les données du
+  // fichier chez certains navigateurs, et le file.text() qui suit échoue.
+  let text;
+  try {
+    text = await file.text();
+  } catch (e) {
+    ev.target.value = '';
+    return msg(`Impossible de lire ${esc(file.name)} : ${esc(e.message)}`, 'err');
+  }
+  ev.target.value = '';
+  if (!text.trim()) return msg(`${esc(file.name)} est vide (0 octet lu).`, 'err');
+
+  let prof;
+  try {
+    prof = JSON.parse(text.replace(/^﻿/, ''));   // certains éditeurs ajoutent un BOM
+  } catch (e) {
+    // montrer ce qui a été lu : un fichier tronqué ou une page HTML enregistrée
+    // par erreur ne se diagnostiquent pas autrement
+    return msg(`${esc(file.name)} ne se parse pas (${text.length} octets lus) : `
+      + `${esc(e.message)}. Début : « ${esc(text.slice(0, 60).replace(/\s+/g, ' '))} »`, 'err');
+  }
+  try {
+    const r = await SEND('profiles', { profile: prof });
+    msg(`« ${esc(r.device.name)} » importé. Il apparaît dans Home Assistant.`, 'ok');
+    await refresh();
+  } catch (e) { msg(esc(e.message), 'err'); }
+};
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

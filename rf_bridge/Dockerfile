@@ -8,6 +8,7 @@ RUN pip3 install --no-cache-dir -r /tmp/requirements.txt \
     && rm -f /tmp/requirements.txt
 
 COPY bridge.py decoder.py profile.py /app/
+COPY www /app/www/
 COPY run.sh /run.sh
 RUN chmod a+x /run.sh
 

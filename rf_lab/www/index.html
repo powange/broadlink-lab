@@ -1092,12 +1092,34 @@ $('p-import').onclick = () => $('p-file').click();
 $('p-file').onchange = async (ev) => {
   const file = ev.target.files?.[0];
   if (!file) return;
+
+  // Lire AVANT de vider l'input : remettre .value à '' libère les données du
+  // fichier chez certains navigateurs, et le file.text() qui suit échoue.
+  let text;
+  try {
+    text = await file.text();
+  } catch (e) {
+    ev.target.value = '';
+    return msg('p-msg', `Impossible de lire ${file.name} : ${e.message}`, 'err');
+  }
   ev.target.value = '';
+
+  if (!text.trim()) {
+    return msg('p-msg', `${file.name} est vide (0 octet lu).`, 'err');
+  }
+
   let prof;
   try {
-    prof = JSON.parse(await file.text());
+    // ﻿ : un BOM en tête fait échouer JSON.parse, et certains éditeurs en
+    // ajoutent un sans le dire.
+    prof = JSON.parse(text.replace(/^﻿/, ''));
   } catch (e) {
-    return msg('p-msg', `${file.name} n'est pas du JSON valide.`, 'err');
+    // Ne PAS dire seulement « JSON invalide » : montrer ce qui a été lu. Un
+    // fichier tronqué, une page HTML enregistrée par erreur ou un BOM ne se
+    // diagnostiquent pas autrement.
+    return msg('p-msg',
+      `${file.name} ne se parse pas (${text.length} octets lus) : ${e.message}. `
+      + `Début du fichier : « ${text.slice(0, 60).replace(/\s+/g, ' ')} »`, 'err');
   }
   const mine = confirm(
     `Importer « ${prof?.device?.name || file.name} ».\n\n`
@@ -1138,15 +1160,43 @@ $('exp-json').onclick = () => {
   show(JSON.stringify(map, null, 2), 'rf_lab_fields.json');
 };
 
+let lastBlobUrl = null;
+
 function show(text, filename) {
-  const blob = new Blob([text], { type: 'text/plain' });
-  const url = URL.createObjectURL(blob);
+  // Le type MIME doit correspondre : text/plain sur un .json fait proposer
+  // « ouvrir avec » à certains navigateurs au lieu d'enregistrer.
+  const type = filename.endsWith('.json') ? 'application/json' : 'text/plain';
+  if (lastBlobUrl) URL.revokeObjectURL(lastBlobUrl);   // sinon on fuit à chaque export
+  lastBlobUrl = URL.createObjectURL(new Blob([text], { type }));
+
   $('exp-out').innerHTML =
     `<div class="row" style="margin-bottom:8px">
-       <a href="${url}" download="${filename}"><button>Télécharger ${filename}</button></a>
+       <button id="dl">Télécharger ${esc(filename)}</button>
        <button id="cp">Copier</button>
+       <span class="dim" style="font-size:12px">${text.length} octets</span>
      </div><pre>${esc(text)}</pre>`;
-  $('cp').onclick = () => navigator.clipboard.writeText(text);
+
+  // Un <button> DANS un <a> est du HTML invalide : le bouton avale le clic et
+  // le téléchargement de l'ancre ne part pas toujours. On déclenche une ancre
+  // détachée à la main, c'est le seul comportement fiable.
+  $('dl').onclick = () => {
+    const a = document.createElement('a');
+    a.href = lastBlobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+  $('cp').onclick = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      $('cp').textContent = 'Copié ✓';
+      setTimeout(() => { $('cp').textContent = 'Copier'; }, 1500);
+    } catch (e) {
+      // clipboard exige un contexte sécurisé : en http:// simple, ça échoue
+      $('cp').textContent = 'Presse-papier refusé';
+    }
+  };
 }
 
 /* ------------------------------------------------------------ init */

@@ -17,6 +17,7 @@ export MQTT_PASSWORD="$(bashio::services mqtt 'password')"
 
 export PROFILES="$(bashio::config 'profiles | join(",")')"
 export LOG_LEVEL="$(bashio::config 'log_level')"
+export PORT=8098
 
 bashio::log.info "Broker MQTT ${MQTT_HOST}:${MQTT_PORT}"
 exec python3 /app/bridge.py

@@ -7,7 +7,7 @@ capturer, diffé, nommer les champs, générer des trames inédites, émettre. P
 **`rf_bridge`** — lit les profils et en fait de vrais appareils Home Assistant, via
 MQTT discovery. **Générique** : il ne connaît aucune télécommande, il applique le profil.
 
-Les deux ne se parlent jamais : ils s'échangent un fichier dans `/share/rf_lab/`. Une
+Les deux ne se parlent jamais : ils s'échangent un fichier dans `/share/broadlink_lab/`. Une
 fois le reverse fini, le labo peut être désinstallé.
 
 **Dépendance assumée : Broadlink.** La capture et l'émission passent par
@@ -122,7 +122,7 @@ d'être installé. Le pont, lui, doit tourner en permanence. Les séparer permet
 désinstaller le premier — et rend le second **réutilisable** : une nouvelle télécommande,
 c'est une session de labo et un profil de plus, zéro ligne de code.
 
-Ils communiquent par `/share/rf_lab/<id>.json` (le labo en `rw`, le pont en `ro`).
+Ils communiquent par `/share/broadlink_lab/<id>.json` (le labo en `rw`, le pont en `ro`).
 Jamais directement : chacun démarre, s'arrête et se met à jour sans l'autre.
 
 `shared/` est la source de vérité de `decoder.py` et `profile.py`. Chaque addon en

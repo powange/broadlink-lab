@@ -524,7 +524,7 @@ def api_set():
 
 # ------------------------------------------------------------ profil d'appareil
 
-PROFILE_DIR = os.environ.get("PROFILE_DIR", "/share/rf_lab")
+PROFILE_DIR = os.environ.get("PROFILE_DIR", "/share/broadlink_lab")
 
 
 @app.post("/api/profile")
@@ -536,7 +536,7 @@ def api_profile():
     l'ID appairé de la télécommande. RF Bridge n'a donc besoin d'aucune capture,
     juste d'un RM4 pour émettre.
 
-    `save=true` l'écrit dans /share/rf_lab/<id>.json, seul point de contact entre
+    `save=true` l'écrit dans /share/broadlink_lab/<id>.json, seul point de contact entre
     les deux addons.
     """
     body = request.json or {}
