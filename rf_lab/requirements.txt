@@ -1,0 +1,5 @@
+flask==3.0.3
+broadlink==0.19.0
+# WSGI de production : HA appelle /api/set en permanence, le serveur de dev de
+# Flask ne convient pas. Python pur -> rien à compiler sur alpine.
+waitress==3.0.0

@@ -1,0 +1,10 @@
+# Dépendances pour lancer l'addon hors container (cf. serve.py).
+# broadlink n'est nécessaire QUE pour --device (vrai RM4) ; le mode par défaut
+# utilise fake_broadlink et n'a besoin que de flask.
+flask==3.0.3
+broadlink==0.19.0
+pyyaml==6.0.2
+# broker MQTT en python pur : le pont se teste sans installer Mosquitto
+amqtt==0.11.3
+paho-mqtt==2.1.0
+waitress==3.0.0

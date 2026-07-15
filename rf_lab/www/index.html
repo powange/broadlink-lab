@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RF Lab</title>
+<style>
+  :root {
+    --bg: #10141a; --panel: #171d26; --panel2: #1e2632; --line: #2b3543;
+    --fg: #e6edf5; --dim: #8b9bb0; --accent: #3aa0ff; --warn: #ffb020;
+    --ok: #35c17a; --err: #ff5c5c; --vary: #3d2f52; --varyfg: #d9b3ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .3px; }
+  h2 .hint { font-weight: 400; color: var(--dim); font-size: 12px; margin-left: 8px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 16px; margin: 12px;
+  }
+  button {
+    background: var(--panel2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 7px 13px; cursor: pointer; font-size: 13px;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
+  button.danger:hover { border-color: var(--err); color: var(--err); }
+  input, select {
+    background: var(--bg); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 8px; font-size: 13px;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  label { color: var(--dim); font-size: 12px; display: block; margin-bottom: 3px; }
+  .row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  .dim { color: var(--dim); }
+  .pill {
+    display: inline-block; padding: 1px 7px; border-radius: 20px;
+    background: var(--panel2); border: 1px solid var(--line);
+    font-size: 11px; color: var(--dim); margin-right: 4px;
+  }
+
+  /* ---- barre d'état ---- */
+  #bar {
+    display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 10px 16px; position: sticky; top: 0; z-index: 20;
+  }
+  #bar .grow { flex: 1; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--err); }
+  .dot.wait { background: var(--warn); }
+
+  /* ---- grille de bits ---- */
+  #grid-wrap { overflow-x: auto; padding-bottom: 6px; }
+  table.grid { border-collapse: collapse; }
+  table.grid th, table.grid td { padding: 0; }
+  .lbl {
+    position: sticky; left: 0; background: var(--panel); z-index: 2;
+    padding: 3px 10px 3px 0 !important; white-space: nowrap; text-align: left;
+    border-right: 1px solid var(--line);
+  }
+  .bit {
+    width: 15px; height: 22px; text-align: center; font-size: 12px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    cursor: crosshair; user-select: none; color: var(--dim);
+  }
+  .bit.one { color: var(--fg); font-weight: 600; }
+  .bit.vary { background: var(--vary); color: var(--varyfg); }
+  .bit.sel { outline: 1px solid var(--accent); outline-offset: -1px; background: #14344f; }
+  .bit.fld { border-bottom: 2px solid var(--accent); }
+  .tick { font-size: 9px; color: var(--dim); height: 14px; text-align: center; }
+  .fldval { padding: 0 6px !important; font-size: 12px; white-space: nowrap; }
+
+  /* ---- divers ---- */
+  .field-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 8px;
+    background: var(--panel2); border: 1px solid var(--line);
+    border-radius: 6px; margin: 0 6px 6px 0; font-size: 12px;
+  }
+  .field-chip b { color: var(--accent); }
+  .field-chip.crc b { color: var(--warn); }
+  .field-chip.const b { color: var(--dim); }
+  .field-chip button { padding: 0 4px; border: none; background: none; color: var(--dim); }
+  pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px; overflow-x: auto; font-size: 12px; margin: 0;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .diff b { color: var(--accent); background: #14344f; font-weight: 700; }
+  .msg { padding: 8px 11px; border-radius: 6px; font-size: 13px; margin-top: 10px; }
+  .msg.ok { background: #123726; color: var(--ok); }
+  .msg.err { background: #3a1a1a; color: var(--err); }
+  .msg.warn { background: #3a2f14; color: var(--warn); }
+  .empty { color: var(--dim); font-size: 13px; padding: 10px 0; }
+  dialog {
+    background: var(--panel); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px; min-width: 300px;
+  }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  .slider-row { display: grid; grid-template-columns: 90px 1fr 78px; gap: 10px; align-items: center; margin-bottom: 8px; }
+  .slider-row input[type=range] { width: 100%; }
+</style>
+</head>
+<body>
+
+<!-- ============================================ 1. barre d'état -->
+<div id="bar">
+  <strong>RF Lab</strong>
+  <span id="conn"><span class="dot wait"></span>…</span>
+  <span>
+    <input id="ip" placeholder="IP du Broadlink" style="width:132px"
+           title="Vide = option de l'addon, puis découverte broadcast">
+    <button id="ip-set">Connecter</button>
+    <button id="ip-stop" class="danger" hidden>Annuler</button>
+    <button id="ip-find" title="Cherche les Broadlink du réseau">Chercher</button>
+  </span>
+  <span class="grow"></span>
+  <span>
+    <label style="display:inline">gap (µs)</label>
+    <input id="gap" type="number" value="2000" step="100" min="200" style="width:88px">
+  </span>
+  <span>
+    <label style="display:inline">décodage</label>
+    <select id="mode"><option value="pwm">PWM</option><option value="manchester">Manchester</option></select>
+  </span>
+  <button id="reload">Recharger</button>
+</div>
+<div id="ip-msg" style="margin:0 16px"></div>
+
+<!-- ============================================ 2. capture -->
+<section>
+  <h2>Capture <span class="hint">la trame porte l'état complet : tout paramètre non noté imite un checksum (§7)</span></h2>
+  <div class="row" style="margin-bottom:10px">
+    <div><label for="c-name">nom</label><input id="c-name" placeholder="lum10_cct3000_v0" style="width:200px"></div>
+    <div id="meta-inputs" class="row" style="gap:12px"></div>
+  </div>
+  <div class="row">
+    <button id="cap" class="primary">Capturer</button>
+    <button id="cap-cancel" class="danger" hidden>Annuler</button>
+    <button id="cap-auto" title="Pré-remplit le nom depuis les paramètres">Nommer auto</button>
+    <span class="grow" style="flex:1"></span>
+    <button id="meta-edit" title="Ajouter / retirer des paramètres d'état">Paramètres d'état…</button>
+  </div>
+  <div id="cap-msg"></div>
+</section>
+
+<!-- ============================================ 3. grille de bits -->
+<section>
+  <h2>Grille de bits <span class="hint">clic-glisser sur les colonnes pour nommer un champ</span></h2>
+  <div class="row" style="margin-bottom:10px">
+    <div>
+      <label for="sort">trier par</label>
+      <select id="sort"><option value="name">nom</option></select>
+    </div>
+    <div id="fields-box" style="flex:1"></div>
+  </div>
+  <div id="analysis-msg"></div>
+  <div id="grid-wrap"></div>
+</section>
+
+<!-- ============================================ 4. générateur -->
+<section>
+  <h2>Générateur <span class="hint">trame absolue : on émet l'état cible, pas un incrément</span></h2>
+  <div class="row" style="margin-bottom:12px">
+    <div><label for="ref">capture de référence</label><select id="ref" style="min-width:220px"></select></div>
+    <button id="gen" class="primary">Générer</button>
+    <button id="send" disabled>Émettre</button>
+    <button id="send2" disabled title="Vérifie qu'un même code passe 2× — révèle un compteur anti-rejeu">Émettre 2×</button>
+  </div>
+  <div id="sliders"></div>
+  <div id="gen-out"></div>
+</section>
+
+<!-- ============================================ 5. profil d'appareil -->
+<section>
+  <h2>Profil d'appareil <span class="hint">le livrable : RF Bridge le transforme en appareil HA</span></h2>
+  <div class="row" style="margin-bottom:10px">
+    <div><label for="d-name">nom de l'appareil</label>
+      <input id="d-name" value="Mantra Nenufar" style="width:180px"></div>
+    <div><label for="d-manu">fabricant</label>
+      <input id="d-manu" value="Mantra" style="width:120px"></div>
+    <div><label for="d-model">modèle</label>
+      <input id="d-model" value="RF00234" style="width:110px"></div>
+    <div><label for="d-id">identifiant</label>
+      <input id="d-id" value="mantra_nenufar" style="width:150px"></div>
+  </div>
+  <div class="row">
+    <button id="p-build" class="primary">Construire le profil</button>
+    <button id="p-save">Enregistrer dans /share</button>
+    <button id="p-import">Importer un profil…</button>
+    <input id="p-file" type="file" accept="application/json,.json" hidden>
+    <span style="flex:1"></span>
+    <button id="exp-json">Table de correspondance (JSON)</button>
+  </div>
+  <div id="p-msg"></div>
+  <div id="exp-out" style="margin-top:12px"></div>
+</section>
+
+<!-- ============================================ dialogue paramètres d'état -->
+<dialog id="meta-dlg">
+  <h2 style="margin-bottom:6px">Paramètres d'état</h2>
+  <p class="dim" style="font-size:12px; margin:0 0 14px; max-width:560px">
+    Tout ce que la télécommande sait régler. La trame étant absolue, elle les porte
+    <em>tous</em> à chaque appui — un paramètre qui change sans être noté ici fera bouger
+    des bits sans corrélation logique, ce qui ressemble exactement à un checksum.
+    Pour un <b>toggle</b> (reverse, nuit, éco), note l'état <b>résultant</b>, pas le bouton pressé.
+  </p>
+  <div id="meta-rows"></div>
+  <div class="row" style="margin-top:12px">
+    <button id="meta-add">+ Ajouter un paramètre</button>
+    <span style="flex:1"></span>
+    <button id="meta-reset" title="Revenir aux paramètres de la RF00234">Défauts</button>
+    <button id="meta-cancel">Annuler</button>
+    <button id="meta-save" class="primary">Enregistrer</button>
+  </div>
+  <div id="meta-dlg-msg"></div>
+</dialog>
+
+<!-- ============================================ dialogue nommage -->
+<dialog id="dlg">
+  <form method="dialog">
+    <h2 style="margin-bottom:14px">Nommer les bits <span id="dlg-range" class="mono dim"></span></h2>
+    <div style="margin-bottom:10px"><label for="f-name">nom du champ</label>
+      <input id="f-name" list="f-sugg" style="width:100%" placeholder="lum">
+      <datalist id="f-sugg">
+        <option value="lum"><option value="cct"><option value="speed">
+        <option value="mode"><option value="crc"><option value="id">
+      </datalist>
+    </div>
+    <div class="row" style="margin-bottom:16px">
+      <div><label for="f-role">rôle</label>
+        <select id="f-role">
+          <option value="data">data</option>
+          <option value="const">const (ne pas toucher)</option>
+          <option value="crc">crc</option>
+        </select></div>
+      <div><label for="f-min" title="Bornes pour les sliders et l'export">min</label>
+        <input id="f-min" type="number" style="width:64px" placeholder="0"></div>
+      <div><label for="f-max">max</label>
+        <input id="f-max" type="number" style="width:64px" placeholder="auto"></div>
+      <div><label for="f-msb">ordre</label>
+        <select id="f-msb"><option value="1">MSB first</option><option value="0">LSB first</option></select></div>
+      <div><label for="f-crc">checksum</label>
+        <select id="f-crc">
+          <option value="none">none</option>
+          <option value="sum8">sum8</option>
+          <option value="xor8">xor8</option>
+          <option value="sub8">sub8 (k − somme)</option>
+        </select></div>
+      <div><label for="f-k">k (sub8)</label>
+        <input id="f-k" style="width:64px" placeholder="0x55" disabled></div>
+      <div><button type="button" id="f-detect" title="Cherche le checksum qui explique toutes les captures">Détecter</button></div>
+    </div>
+    <div id="f-detect-msg"></div>
+    <div class="row" style="justify-content:flex-end">
+      <button value="cancel">Annuler</button>
+      <button id="f-ok" value="ok" class="primary">Enregistrer</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+'use strict';
+
+/* Toutes les URL sont RELATIVES : l'ingress sert la page sous
+   /api/hassio_ingress/<token>/ et strippe ce préfixe. Un '/' initial casserait tout. */
+const GET = (p) => fetch('api/' + p).then(r => r.json());
+const SEND = (p, body, method = 'POST') =>
+  fetch('api/' + p, {
+    method, headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  }).then(async r => {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    return j;
+  });
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const S = {
+  rows: [], analysis: { length: 0, varying: [], truncated: false },
+  fields: [], checksum: { kind: 'none' }, metaSchema: [],
+  refId: null, gen: null, sel: null, drag: null,
+};
+
+const gap = () => parseInt($('gap').value, 10) || 2000;
+const mode = () => $('mode').value;
+
+/* Miroir JS de decoder.field_value — /api/analyze ne renvoie que les bits bruts. */
+function fieldValue(bits, start, end, msbFirst = true) {
+  let chunk = bits.slice(start, end);
+  if (!chunk) return 0;
+  if (!msbFirst) chunk = [...chunk].reverse().join('');
+  const v = parseInt(chunk, 2);
+  return Number.isNaN(v) ? 0 : v;
+}
+const width = (f) => f.end - f.start;
+/* Bornes réelles du champ. La largeur en bits donne le plafond théorique, mais
+   la RF00234 n'utilise que 1..11 sur 4 bits de luminosité et 1..8 sur 4 bits de
+   vitesse : énumérer 0..15 fabriquerait des états que la télécommande n'émet
+   jamais, et ferait exploser le produit cartésien de l'export. */
+const maxOf = (f) => f.max != null ? f.max : Math.pow(2, width(f)) - 1;
+const minOf = (f) => f.min != null ? f.min : 0;
+/* Les champs énumérables : ni le CRC (recalculé), ni les const (préambule, ID,
+   bits de contexte — décoratifs, cf. §10). */
+const dataFields = () => S.fields.filter(f => f.role !== 'crc' && f.role !== 'const');
+
+function msg(el, text, kind = 'ok') {
+  $(el).innerHTML = text ? `<div class="msg ${kind}">${esc(text)}</div>` : '';
+}
+
+/* ------------------------------------------------------------ 1. état */
+
+const IP_SRC = { ui: 'saisie ici', option: "option de l'addon", broadcast: 'broadcast' };
+
+function showStatus(s) {
+  $('conn').innerHTML = s.connected
+    ? `<span class="dot on"></span>${esc(s.model || 'Broadlink')} `
+      + `<span class="dim">@ ${esc(s.host)} · ${s.frequency ?? ''} MHz</span>`
+    : `<span class="dot off"></span><span class="dim">${esc(s.error || 'non connecté')}</span>`;
+  if (s.ip !== undefined && $('ip') !== document.activeElement) $('ip').value = s.ip || '';
+  if (s.ip_source) $('ip').title = `IP : ${IP_SRC[s.ip_source] || s.ip_source}`;
+}
+
+async function refreshStatus() {
+  $('conn').innerHTML = '<span class="dot wait"></span>connexion…';
+  try {
+    showStatus(await GET('status'));
+  } catch (e) {
+    $('conn').innerHTML = `<span class="dot off"></span><span class="dim">${esc(e.message)}</span>`;
+  }
+}
+
+/* L'IP est modifiable ici et persistée : un Broadlink est en DHCP, son adresse
+   change, et éditer les options de l'addon + redémarrer serait absurde. */
+/* Une IP fautive coûte 3 essais × 6 s = 18 s. On doit pouvoir abandonner —
+   c'est justement le cas où on s'est trompé de chiffre. Deux niveaux :
+   AbortController rend l'UI instantanée, et POST /api/device/cancel dit au
+   serveur de ne pas relancer d'essai (un recv() en cours ne s'interrompt pas,
+   donc l'abandon prend au pire 6 s côté serveur au lieu de 18). */
+let ipAbort = null;
+
+function connecting(on) {
+  $('ip-set').disabled = on;
+  $('ip-find').disabled = on;
+  $('ip-stop').hidden = !on;
+  $('ip-stop').disabled = false;
+}
+
+$('ip-set').onclick = async () => {
+  connecting(true);
+  $('conn').innerHTML = '<span class="dot wait"></span>connexion…';
+  msg('ip-msg', 'Connexion… (jusqu\'à 18 s : ces appareils dorment, on réessaie 3 fois)', 'warn');
+  ipAbort = new AbortController();
+  try {
+    const r = await fetch('api/device', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ip: $('ip').value.trim() }),
+      signal: ipAbort.signal,
+    }).then(x => x.json());
+    showStatus(r);
+    msg('ip-msg', r.connected
+      ? `Connecté à ${r.model} @ ${r.host}.`
+      : `Pas de réponse : ${r.error}`, r.connected ? 'ok' : 'err');
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      $('conn').innerHTML = '<span class="dot off"></span><span class="dim">connexion abandonnée</span>';
+      msg('ip-msg', 'Abandonné. Corrige l\'IP et relance — ou clique « Chercher ».', 'warn');
+    } else {
+      msg('ip-msg', e.message, 'err');
+    }
+  } finally {
+    ipAbort = null;
+    connecting(false);
+  }
+};
+
+$('ip-stop').onclick = () => {
+  $('ip-stop').disabled = true;
+  // le serveur d'abord : sinon il continuerait ses essais dans le vide
+  SEND('device/cancel').catch(() => {});
+  if (ipAbort) ipAbort.abort();
+};
+
+$('ip').onkeydown = (e) => {
+  if (e.key === 'Enter' && !$('ip-set').disabled) $('ip-set').onclick();
+  if (e.key === 'Escape' && !$('ip-stop').hidden) $('ip-stop').onclick();
+};
+
+$('ip-find').onclick = async () => {
+  $('ip-find').disabled = true;
+  msg('ip-msg', 'Recherche en broadcast…', 'warn');
+  try {
+    let r = await GET('discover');
+    if (!r.devices.length) {
+      // Le broadcast ne traverse pas un NAT (WSL2). Le balayage unicast, si.
+      const cidr = prompt(
+        'Rien en broadcast. Balayer une plage en unicast ?\n\n'
+        + "C'est plus lent (~30 s) mais ça traverse un NAT — nécessaire depuis WSL2.",
+        '192.168.0.0/24');
+      if (!cidr) { msg('ip-msg', r.hint || 'Aucun appareil trouvé.', 'warn'); return; }
+      msg('ip-msg', `Balayage unicast de ${cidr}… (~30 s)`, 'warn');
+      r = await GET(`discover?cidr=${encodeURIComponent(cidr)}`);
+    }
+    if (!r.devices.length) { msg('ip-msg', r.hint || 'Aucun appareil trouvé.', 'err'); return; }
+
+    const rf = r.devices.filter(d => d.rf);
+    const pick = rf[0] || r.devices[0];
+    $('ip').value = pick.ip;
+    const list = r.devices.map(d =>
+      `${d.ip} — ${d.model} (0x${d.devtype.toString(16)})${d.rf ? ' · RF ✓' : ' · IR seul'}`).join(' | ');
+    msg('ip-msg', `${r.devices.length} appareil(s) en ${r.method} : ${list}. `
+      + `${pick.ip} pré-rempli — clique « Connecter ».`
+      + (rf.length ? '' : ' ⚠ aucun ne sait faire de RF : il te faut un RM Pro ou RM4 Pro.'),
+      rf.length ? 'ok' : 'warn');
+  } catch (e) {
+    msg('ip-msg', e.message, 'err');
+  } finally {
+    $('ip-find').disabled = false;
+  }
+};
+
+/* ------------------------------------------------------------ 2. capture */
+
+/* Le panneau de saisie est généré depuis meta_schema : les paramètres d'état
+   dépendent de la télécommande, pas de l'outil. */
+function renderMetaInputs() {
+  const prev = meta();                       // ne pas perdre la saisie en cours
+  $('meta-inputs').innerHTML = S.metaSchema.map(f => {
+    const id = `c-${f.key}`;
+    if (f.type === 'bool')
+      return `<div><label for="${id}">${esc(f.label || f.key)}</label>
+        <div style="height:31px;display:flex;align-items:center">
+          <input id="${id}" type="checkbox" style="width:18px;height:18px"></div></div>`;
+    if (f.type === 'enum')
+      return `<div><label for="${id}">${esc(f.label || f.key)}</label>
+        <select id="${id}">${(f.options || []).map(o =>
+          `<option value="${esc(o)}">${esc(o)}</option>`).join('')}</select></div>`;
+    return `<div><label for="${id}">${esc(f.label || f.key)}</label>
+      <input id="${id}" type="number" style="width:92px"
+        ${f.min != null ? `min="${f.min}"` : ''} ${f.max != null ? `max="${f.max}"` : ''}></div>`;
+  }).join('');
+  // restaure ce qui existait déjà — on enchaîne les captures en ne bougeant qu'un champ
+  for (const f of S.metaSchema) {
+    const el = $(`c-${f.key}`);
+    if (!el || prev[f.key] == null) continue;
+    if (f.type === 'bool') el.checked = !!prev[f.key];
+    else el.value = prev[f.key];
+  }
+}
+
+function meta() {
+  const m = {};
+  for (const f of S.metaSchema) {
+    const el = $(`c-${f.key}`);
+    if (!el) continue;
+    if (f.type === 'bool') { m[f.key] = el.checked; continue; }
+    if (el.value === '') { m[f.key] = null; continue; }
+    // Un enum peut avoir des options textuelles — le mode moteur vaut
+    // normal/nuit/eco. Number('normal') donne NaN : ne coercer que si ça a un sens.
+    const n = Number(el.value);
+    m[f.key] = (f.type === 'enum' && Number.isNaN(n)) ? el.value : n;
+  }
+  return m;
+}
+
+/* Valeur « au repos » d'un paramètre : ce qui n'a pas besoin d'apparaître dans le
+   nom. Pour un enum, c'est sa première option (normal, timer 0…). */
+const isRest = (f, v) =>
+  v === null || v === false || v === 0 ||
+  (f.type === 'enum' && Array.isArray(f.options) && v === f.options[0]);
+
+/* Les champs manquants : un bool vaut toujours false, un enum a toujours une
+   valeur sélectionnée — seuls les number peuvent rester vides. */
+function missingMeta() {
+  const m = meta();
+  return S.metaSchema.filter(f => f.type === 'number' && m[f.key] === null)
+                     .map(f => f.label || f.key);
+}
+
+$('cap-auto').onclick = () => {
+  const m = meta();
+  const parts = S.metaSchema
+    .filter(f => f.always || !isRest(f, m[f.key]))
+    .map(f => {
+      const v = m[f.key];
+      const short = f.short || f.key;
+      if (f.type === 'bool') return `${short}${v ? 1 : 0}`;
+      return `${short}${v ?? '?'}`;
+    });
+  if (parts.length) $('c-name').value = parts.join('_');
+};
+
+$('cap').onclick = async () => {
+  const m = meta();
+  const missing = missingMeta();
+  if (missing.length) {
+    return msg('cap-msg',
+      `Renseigne : ${missing.join(', ')}. La trame porte l'état complet — le diff repose entièrement dessus.`,
+      'warn');
+  }
+  if (!$('c-name').value.trim()) $('cap-auto').onclick();
+
+  $('cap').disabled = true;
+  $('cap-cancel').disabled = false;
+  $('cap-cancel').hidden = false;
+  try {
+    await SEND('capture/start');
+    msg('cap-msg', 'Appuie sur la touche de la télécommande… (Échap pour annuler)', 'warn');
+    const res = await pollCapture();
+    if (res.state === 'cancelled') {
+      msg('cap-msg', 'Capture annulée. Le RM4 est ressorti du mode écoute.', 'warn');
+    } else if (res.state !== 'done') {
+      msg('cap-msg', res.message || res.state, 'err');
+    } else {
+      await SEND('captures', { name: $('c-name').value.trim(), b64: res.result, meta: m });
+      msg('cap-msg', `Capturée et enregistrée : ${$('c-name').value.trim()}`, 'ok');
+      $('c-name').value = '';
+      await loadAnalyze();
+    }
+  } catch (e) {
+    msg('cap-msg', e.message, 'err');
+  } finally {
+    $('cap').disabled = false;
+    $('cap-cancel').hidden = true;
+  }
+};
+
+$('cap-cancel').onclick = async () => {
+  $('cap-cancel').disabled = true;
+  msg('cap-msg', 'Annulation…', 'warn');
+  try {
+    await SEND('capture/cancel');
+  } catch (e) {
+    msg('cap-msg', e.message, 'err');
+  }
+};
+
+// Échap annule aussi : pendant une capture on a les mains sur la télécommande,
+// pas sur la souris.
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('cap-cancel').hidden && !$('cap-cancel').disabled) {
+    $('cap-cancel').onclick();
+  }
+});
+
+function pollCapture() {
+  return new Promise((resolve, reject) => {
+    const t = setInterval(async () => {
+      try {
+        const r = await GET('capture/poll');
+        if (['done', 'timeout', 'error', 'cancelled'].includes(r.state)) {
+          clearInterval(t); resolve(r);
+        }
+      } catch (e) { clearInterval(t); reject(e); }
+    }, 500);
+  });
+}
+
+/* ------------------------------------------------------------ 3. grille */
+
+async function loadAnalyze() {
+  const d = await GET(`analyze?gap=${gap()}&mode=${mode()}`);
+  S.rows = d.rows || [];
+  S.analysis = d.analysis || { length: 0, varying: [], truncated: false };
+  S.fields = d.fields || [];
+  S.checksum = d.checksum || { kind: 'none' };
+  const schemaChanged = JSON.stringify(S.metaSchema) !== JSON.stringify(d.meta_schema || []);
+  S.metaSchema = d.meta_schema || [];
+  if (schemaChanged) { renderMetaInputs(); renderSortOptions(); }
+  if (!S.rows.some(r => r.id === S.refId)) S.refId = S.rows[0]?.id ?? null;
+  renderGrid(); renderFields(); renderRefs(); renderSliders();
+}
+
+function renderSortOptions() {
+  const cur = $('sort').value;
+  $('sort').innerHTML = '<option value="name">nom</option>' +
+    S.metaSchema.map(f =>
+      `<option value="${esc(f.key)}">${esc(f.label || f.key)}</option>`).join('');
+  $('sort').value = [...$('sort').options].some(o => o.value === cur) ? cur : 'name';
+}
+
+/* ---- éditeur du schéma ---- */
+
+function renderMetaRows(schema) {
+  $('meta-rows').innerHTML = schema.map((f, i) => `
+    <div class="row" data-i="${i}" style="gap:8px; margin-bottom:8px; align-items:flex-end">
+      <div><label>clé</label><input class="m-key" value="${esc(f.key)}" style="width:96px"></div>
+      <div><label>libellé</label><input class="m-label" value="${esc(f.label || f.key)}" style="width:126px"></div>
+      <div><label>type</label>
+        <select class="m-type">
+          ${['number', 'bool', 'enum'].map(t =>
+            `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t}</option>`).join('')}
+        </select></div>
+      <div><label>préfixe nom</label><input class="m-short" value="${esc(f.short || f.key)}" style="width:74px"></div>
+      <div><label>valeurs (enum)</label>
+        <input class="m-opts" value="${esc((f.options || []).join(', '))}"
+               placeholder="0, 1, 2, 4, 8" style="width:118px"
+               ${f.type === 'enum' ? '' : 'disabled'}></div>
+      <div><label title="Toujours dans le nom auto, même à 0">toujours</label>
+        <div style="height:31px;display:flex;align-items:center">
+          <input class="m-always" type="checkbox" ${f.always ? 'checked' : ''}
+                 style="width:18px;height:18px"></div></div>
+      <button class="danger m-del" title="Retirer">✕</button>
+    </div>`).join('');
+
+  $('meta-rows').querySelectorAll('.m-type').forEach(sel => {
+    sel.onchange = () => {
+      const opts = sel.closest('.row').querySelector('.m-opts');
+      opts.disabled = sel.value !== 'enum';
+      if (sel.value === 'enum' && !opts.value) opts.value = '0, 1';
+    };
+  });
+  $('meta-rows').querySelectorAll('.m-del').forEach(b => {
+    b.onclick = () => { b.closest('.row').remove(); };
+  });
+}
+
+function readMetaRows() {
+  return [...$('meta-rows').querySelectorAll('.row')].map(r => {
+    const g = (c) => r.querySelector(c);
+    const type = g('.m-type').value;
+    const f = {
+      key: g('.m-key').value.trim(),
+      label: g('.m-label').value.trim() || g('.m-key').value.trim(),
+      type,
+      short: g('.m-short').value.trim() || g('.m-key').value.trim(),
+    };
+    if (g('.m-always').checked) f.always = true;
+    if (type === 'enum') {
+      f.options = g('.m-opts').value.split(',')
+        .map(s => s.trim()).filter(s => s !== '')
+        .map(s => (isNaN(Number(s)) ? s : Number(s)));
+    }
+    return f;
+  }).filter(f => f.key);
+}
+
+$('meta-edit').onclick = () => {
+  renderMetaRows(S.metaSchema);
+  msg('meta-dlg-msg', '');
+  $('meta-dlg').showModal();
+};
+$('meta-add').onclick = () =>
+  renderMetaRows([...readMetaRows(), { key: '', label: '', type: 'number', short: '' }]);
+$('meta-reset').onclick = async () => {
+  const d = await GET('meta-schema?defaults=1').catch(() => null);
+  if (d?.meta_schema) renderMetaRows(d.meta_schema);
+};
+$('meta-cancel').onclick = () => $('meta-dlg').close();
+$('meta-save').onclick = async () => {
+  const schema = readMetaRows();
+  const keys = schema.map(f => f.key);
+  if (!schema.length) return msg('meta-dlg-msg', 'Il faut au moins un paramètre.', 'err');
+  if (new Set(keys).size !== keys.length)
+    return msg('meta-dlg-msg', 'Deux paramètres portent la même clé.', 'err');
+  const badEnum = schema.find(f => f.type === 'enum' && !f.options?.length);
+  if (badEnum) return msg('meta-dlg-msg', `${badEnum.key} : un enum a besoin de valeurs.`, 'err');
+  try {
+    await SEND('meta-schema', { meta_schema: schema });
+    $('meta-dlg').close();
+    S.metaSchema = [];              // force le re-rendu
+    await loadAnalyze();
+  } catch (e) {
+    msg('meta-dlg-msg', e.message, 'err');
+  }
+};
+
+/* Une capture enregistrée avant l'ajout d'un paramètre n'a pas la clé : on
+   affiche un « ? » plutôt que de la masquer, sinon le trou passe inaperçu et
+   c'est exactement ce genre d'angle mort qui fait passer un champ pour un CRC. */
+function metaChips(m) {
+  return S.metaSchema.map(f => {
+    const v = m?.[f.key];
+    if (v == null) return `<span class="pill" style="color:var(--warn)">${esc(f.key)} ?</span>`;
+    if (f.type === 'bool') {
+      // Un bool `always` (light, fan) est informatif dans les DEUX sens : éteint
+      // est un état à part entière, le masquer rendrait la ligne ambiguë.
+      if (f.always) return `<span class="pill" style="color:${v ? 'var(--fg)' : 'var(--dim)'}">${
+        esc(f.key)} ${v ? 'on' : 'off'}</span>`;
+      return v ? `<span class="pill" style="color:var(--fg)">${esc(f.key)}</span>` : '';
+    }
+    return `<span class="pill">${esc(f.key)} ${esc(v)}</span>`;
+  }).join('');
+}
+
+function sortedRows() {
+  const k = $('sort').value;
+  const rows = [...S.rows];
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  if (k === 'name') return rows.sort(byName);
+  const f = S.metaSchema.find(x => x.key === k);
+  const num = (v) => {
+    if (typeof v === 'boolean') return v ? 1 : 0;
+    if (typeof v === 'string' && f?.options) return f.options.indexOf(v);
+    return v;
+  };
+  return rows.sort((a, b) => {
+    const va = num(a.meta?.[k]), vb = num(b.meta?.[k]);
+    if (va == null && vb == null) return byName(a, b);
+    if (va == null) return 1;
+    if (vb == null) return -1;
+    return va - vb || byName(a, b);
+  });
+}
+
+function renderGrid() {
+  const wrap = $('grid-wrap');
+  if (!S.rows.length) {
+    wrap.innerHTML = '<div class="empty">Aucune capture. Commence par la séquence de §9 : lum10/lum20/lum30 à CCT et vitesse constants isole le champ luminosité.</div>';
+    msg('analysis-msg', '');
+    return;
+  }
+
+  const notes = [];
+  if (S.analysis.truncated)
+    notes.push(`Longueurs de trames différentes (${(S.analysis.lengths || []).join(', ')} bits) — le gap est probablement mal réglé, les colonnes ne s'alignent pas.`);
+  const dead = S.rows.filter(r => !r.bits).map(r => r.name);
+  if (dead.length) notes.push(`Décodage vide pour : ${dead.join(', ')}. Ajuste le gap ou essaie Manchester.`);
+  if (!S.analysis.varying.length && S.rows.length > 1)
+    notes.push('Aucune colonne ne varie : toutes les captures portent les mêmes bits.');
+  msg('analysis-msg', notes.join(' '), notes.length ? 'warn' : 'ok');
+
+  const n = S.analysis.length || Math.max(0, ...S.rows.map(r => r.bits.length));
+  const vary = new Set(S.analysis.varying);
+  const inField = new Map();
+  S.fields.forEach(f => { for (let i = f.start; i < f.end; i++) inField.set(i, f); });
+
+  let h = '<table class="grid"><thead><tr><th class="lbl"></th>';
+  for (let i = 0; i < n; i++) h += `<th class="tick">${i % 5 === 0 ? i : ''}</th>`;
+  h += '</tr></thead><tbody>';
+
+  for (const r of sortedRows()) {
+    const chips = metaChips(r.meta);
+    h += `<tr data-id="${r.id}"><td class="lbl">
+            <button class="danger" data-del="${r.id}" title="Supprimer">✕</button>
+            <span class="mono">${esc(r.name)}</span> ${chips}
+          </td>`;
+    for (let i = 0; i < n; i++) {
+      const b = r.bits[i] ?? '';
+      const cls = ['bit'];
+      if (b === '1') cls.push('one');
+      if (vary.has(i)) cls.push('vary');
+      if (inField.has(i)) cls.push('fld');
+      h += `<td class="${cls.join(' ')}" data-col="${i}">${b || '·'}</td>`;
+    }
+    h += '</tr>';
+  }
+  h += '</tbody></table>';
+
+  // valeurs décodées des champs nommés : c'est ce qui rend le pattern lisible
+  if (S.fields.length) {
+    h += '<table class="grid" style="margin-top:10px"><tbody>';
+    h += `<tr><td class="lbl dim">champs décodés</td><td class="fldval dim">${
+      S.fields.map(f => `<span class="pill">${esc(f.name)}</span>`).join('')}</td></tr>`;
+    for (const r of sortedRows()) {
+      if (!r.bits) continue;
+      const vals = S.fields.map(f => {
+        const raw = r.bits.slice(f.start, f.end);
+        const v = fieldValue(r.bits, f.start, f.end, f.msb_first !== false);
+        return `<span class="pill" style="color:var(--fg)">${esc(f.name)} <b class="mono">${raw}</b> = ${v}</span>`;
+      }).join('');
+      h += `<tr><td class="lbl"><span class="mono">${esc(r.name)}</span></td><td class="fldval">${vals}</td></tr>`;
+    }
+    h += '</tbody></table>';
+  }
+
+  wrap.innerHTML = h;
+  wrap.querySelectorAll('[data-del]').forEach(b => b.onclick = async (e) => {
+    e.stopPropagation();
+    await SEND('captures/' + b.dataset.del, undefined, 'DELETE');
+    await loadAnalyze();
+  });
+  wireDrag(wrap);
+}
+
+/* --- sélection de colonnes au clic-glisser --- */
+function wireDrag(wrap) {
+  const colOf = (e) => {
+    const td = e.target.closest('td.bit');
+    return td ? parseInt(td.dataset.col, 10) : null;
+  };
+  wrap.onmousedown = (e) => {
+    const c = colOf(e);
+    if (c === null) return;
+    e.preventDefault();
+    S.drag = { a: c, b: c };
+    paintSel();
+  };
+  wrap.onmousemove = (e) => {
+    if (!S.drag) return;
+    const c = colOf(e);
+    if (c === null) return;
+    S.drag.b = c;
+    paintSel();
+  };
+  window.onmouseup = () => {
+    if (!S.drag) return;
+    S.sel = { start: Math.min(S.drag.a, S.drag.b), end: Math.max(S.drag.a, S.drag.b) + 1 };
+    S.drag = null;
+    openDialog();
+  };
+}
+
+function paintSel() {
+  if (!S.drag) return;
+  const lo = Math.min(S.drag.a, S.drag.b), hi = Math.max(S.drag.a, S.drag.b);
+  document.querySelectorAll('td.bit').forEach(td => {
+    const c = +td.dataset.col;
+    td.classList.toggle('sel', c >= lo && c <= hi);
+  });
+}
+
+function openDialog() {
+  const { start, end } = S.sel;
+  const existing = S.fields.find(f => f.start === start && f.end === end);
+  $('dlg-range').textContent = `[${start}, ${end}) — ${end - start} bits`;
+  $('f-name').value = existing?.name || '';
+  $('f-role').value = existing?.role || 'data';
+  $('f-msb').value = (existing?.msb_first === false) ? '0' : '1';
+  $('f-min').value = existing?.min ?? '';
+  $('f-max').value = existing?.max ?? '';
+  $('f-crc').value = S.checksum.kind || 'none';
+  $('f-k').value = S.checksum.k != null ? '0x' + S.checksum.k.toString(16) : '';
+  syncK();
+  msg('f-detect-msg', '');
+  $('dlg').showModal();
+  $('f-name').focus();
+}
+
+const syncK = () => { $('f-k').disabled = $('f-crc').value !== 'sub8'; };
+$('f-crc').onchange = syncK;
+const parseK = () => {
+  const v = $('f-k').value.trim();
+  if (!v) return 0;
+  return v.startsWith('0x') ? parseInt(v, 16) : parseInt(v, 10);
+};
+
+/* Détection du checksum — le piège n°1 de §7. Sans lui, une trame générée avec
+   un champ modifié est ignorée par le récepteur, sans le moindre message. */
+$('f-detect').onclick = async () => {
+  const { start, end } = S.sel;
+  if ($('f-role').value !== 'crc')
+    return msg('f-detect-msg', 'Passe le rôle à « crc » : la détection cherche ce qui explique CETTE tranche.', 'warn');
+  msg('f-detect-msg', 'Recherche…', 'warn');
+  try {
+    const r = await GET(`detect-checksum?start=${start}&end=${end}&gap=${gap()}`);
+    if (r.kind === 'none') {
+      msg('f-detect-msg', `Aucun checksum connu n'explique ces bits (${r.samples} captures). `
+        + `Soit ce n'est pas un checksum, soit l'algorithme n'est pas géré.`, 'err');
+      return;
+    }
+    $('f-crc').value = r.kind;
+    $('f-k').value = '0x' + (r.k || 0).toString(16);
+    syncK();
+    const weak = r.confidence < 3;
+    msg('f-detect-msg',
+      `${r.kind}${r.kind === 'sub8' ? ` avec k = 0x${r.k.toString(16)}` : ''} — `
+      + `explique les ${r.confidence} états distincts capturés.`
+      + (weak ? ' ⚠ Moins de 3 états : ça peut être un hasard, confirme avec une capture de plus.' : ''),
+      weak ? 'warn' : 'ok');
+  } catch (e) {
+    msg('f-detect-msg', e.message, 'err');
+  }
+};
+
+$('dlg').addEventListener('close', async () => {
+  document.querySelectorAll('td.bit.sel').forEach(td => td.classList.remove('sel'));
+  if ($('dlg').returnValue !== 'ok' || !S.sel) return;
+  const name = $('f-name').value.trim();
+  if (!name) return;
+
+  const f = {
+    name, start: S.sel.start, end: S.sel.end,
+    msb_first: $('f-msb').value === '1',
+    role: $('f-role').value,
+  };
+  if ($('f-min').value !== '') f.min = +$('f-min').value;
+  if ($('f-max').value !== '') f.max = +$('f-max').value;
+  // un même nom ou une même tranche remplace l'existant
+  const fields = S.fields.filter(x => x.name !== f.name && !(x.start === f.start && x.end === f.end));
+  fields.push(f);
+  fields.sort((a, b) => a.start - b.start);
+
+  await SEND('fields', { fields, checksum: { kind: $('f-crc').value, k: parseK() } });
+  await loadAnalyze();
+});
+
+function renderFields() {
+  const box = $('fields-box');
+  if (!S.fields.length) {
+    box.innerHTML = '<span class="dim" style="font-size:12px">Aucun champ nommé.</span>';
+    return;
+  }
+  box.innerHTML = S.fields.map(f => `
+    <span class="field-chip ${f.role === 'crc' ? 'crc' : ''} ${f.role === 'const' ? 'const' : ''}">
+      <b>${esc(f.name)}</b>
+      <span class="mono dim">[${f.start},${f.end}) ${width(f)}b${
+        f.role === 'const' ? ' const' : (f.min != null || f.max != null ? ` ${minOf(f)}-${maxOf(f)}` : '')}</span>
+      <button data-rm="${esc(f.name)}" title="Retirer">✕</button>
+    </span>`).join('') +
+    (S.checksum.kind !== 'none'
+      ? `<span class="pill" style="color:var(--warn)">checksum ${esc(S.checksum.kind)}${
+          S.checksum.kind === 'sub8' ? ' k=0x' + (S.checksum.k || 0).toString(16) : ''}</span>`
+      : '');
+
+  box.querySelectorAll('[data-rm]').forEach(b => b.onclick = async () => {
+    await SEND('fields', {
+      fields: S.fields.filter(f => f.name !== b.dataset.rm),
+      checksum: S.checksum,
+    });
+    await loadAnalyze();
+  });
+}
+
+/* ------------------------------------------------------------ 4. générateur */
+
+function renderRefs() {
+  $('ref').innerHTML = sortedRows()
+    .map(r => `<option value="${r.id}" ${r.id === S.refId ? 'selected' : ''}>${esc(r.name)}</option>`)
+    .join('') || '<option>—</option>';
+}
+$('ref').onchange = () => { S.refId = $('ref').value; renderSliders(); };
+
+function renderSliders() {
+  const box = $('sliders');
+  const data = dataFields();
+  if (!data.length) {
+    box.innerHTML = '<div class="empty">Nomme au moins un champ « data » dans la grille pour obtenir des sliders.</div>';
+    return;
+  }
+  const ref = S.rows.find(r => r.id === S.refId);
+  box.innerHTML = data.map(f => {
+    const cur = ref?.bits ? fieldValue(ref.bits, f.start, f.end, f.msb_first !== false) : minOf(f);
+    return `<div class="slider-row">
+      <label style="margin:0">${esc(f.name)} <span class="dim">${width(f)}b</span></label>
+      <input type="range" data-f="${esc(f.name)}" min="${minOf(f)}" max="${maxOf(f)}"
+             value="${Math.min(Math.max(cur, minOf(f)), maxOf(f))}">
+      <span class="mono" id="v-${esc(f.name)}">${cur} <span class="dim">/ ${maxOf(f)}</span></span>
+    </div>`;
+  }).join('');
+  box.querySelectorAll('input[type=range]').forEach(s => {
+    s.oninput = () => {
+      $('v-' + s.dataset.f).innerHTML = `${s.value} <span class="dim">/ ${maxOf(S.fields.find(f => f.name === s.dataset.f))}</span>`;
+    };
+  });
+}
+
+function sliderValues() {
+  const v = {};
+  $('sliders').querySelectorAll('input[type=range]').forEach(s => { v[s.dataset.f] = +s.value; });
+  return v;
+}
+
+$('gen').onclick = async () => {
+  if (!S.refId) return msg('gen-out', 'Aucune capture de référence.', 'warn');
+  $('gen').disabled = true;
+  try {
+    const r = await SEND('generate', { ref_id: S.refId, values: sliderValues(), gap: gap() });
+    S.gen = r;
+    const diff = [...r.bits].map((b, i) => b === r.ref_bits[i] ? b : `<b>${b}</b>`).join('');
+    const changed = [...r.bits].filter((b, i) => b !== r.ref_bits[i]).length;
+    $('gen-out').innerHTML = `
+      <div class="msg ${r.verified ? 'ok' : 'err'}">
+        ${r.verified
+          ? `Trame vérifiée : re-décodée, elle porte bien les bits demandés. ${changed} bit(s) modifié(s).`
+          : 'ÉCHEC de vérification : la trame reconstruite ne re-décode pas vers les bits demandés. Ne pas émettre.'}
+      </div>
+      <pre style="margin-top:10px">réf     ${esc(r.ref_bits)}
+générée <span class="diff">${diff}</span>
+b64     ${esc(r.b64)}</pre>`;
+    $('send').disabled = !r.verified;
+    $('send2').disabled = !r.verified;
+  } catch (e) {
+    msg('gen-out', e.message, 'err');
+    $('send').disabled = $('send2').disabled = true;
+  } finally {
+    $('gen').disabled = false;
+  }
+};
+
+async function emit(times) {
+  if (!S.gen) return;
+  $('send').disabled = $('send2').disabled = true;
+  try {
+    for (let i = 0; i < times; i++) {
+      await SEND('send', { b64: S.gen.b64 });
+      if (i < times - 1) await new Promise(r => setTimeout(r, 700));
+    }
+    msg('gen-out', times === 1
+      ? 'Émis. Observe le ventilo.'
+      : 'Émis 2×. Si le 2ᵉ envoi n\'a rien fait, il y a un compteur anti-rejeu (cf. §7).', 'ok');
+  } catch (e) {
+    msg('gen-out', e.message, 'err');
+  } finally {
+    $('send').disabled = $('send2').disabled = false;
+  }
+}
+$('send').onclick = () => emit(1);
+$('send2').onclick = () => emit(2);
+
+/* ------------------------------------------------------------ 5. profil */
+
+/* Les entités sont déduites des noms de champs reconnus. Le reste de l'outil est
+   générique ; cette correspondance-là ne l'est pas — elle sait ce qu'est une
+   lampe et un ventilateur. Pour un autre appareil, éditer le JSON à la main. */
+function deriveEntities() {
+  const f = (n) => S.fields.find(x => x.name === n && x.role !== 'const' && x.role !== 'crc');
+  const ents = [];
+
+  if (f('light')) {
+    const e = { type: 'light', id: 'light', name: 'Lumière', power: 'light' };
+    if (f('lum')) e.brightness = { field: 'lum', min: minOf(f('lum')), max: maxOf(f('lum')) };
+    if (f('cct')) e.color_temp = { field: 'cct', min: minOf(f('cct')), max: maxOf(f('cct')),
+                                   kelvin: [3000, 5000] };
+    ents.push(e);
+  }
+  if (f('fan')) {
+    const e = { type: 'fan', id: 'fan', name: 'Ventilateur', power: 'fan' };
+    if (f('speed')) e.percentage = { field: 'speed', min: minOf(f('speed')), max: maxOf(f('speed')) };
+    if (f('reverse')) e.direction = 'reverse';
+    if (f('mode')) e.preset = { field: 'mode', options: ['normal', 'nuit', 'eco'] };
+    ents.push(e);
+  }
+  if (f('timer')) {
+    // le champ compte par pas de 2 min : la télécommande n'offre que 1/2/4/8 h,
+    // le récepteur accepte n'importe quelle durée jusqu'à 8 h 30
+    ents.push({ type: 'number', id: 'timer', name: 'Minuterie', field: 'timer',
+                scale: 2, unit: 'min' });
+  }
+  // tout autre champ 1 bit devient un interrupteur
+  for (const x of dataFields()) {
+    if (['light', 'fan', 'lum', 'cct', 'speed', 'reverse', 'mode', 'timer'].includes(x.name)) continue;
+    if (width(x) === 1) ents.push({ type: 'switch', id: x.name, name: x.name, power: x.name });
+  }
+  return ents;
+}
+
+function deviceMeta() {
+  return {
+    id: ($('d-id').value || '').trim(),
+    name: ($('d-name').value || '').trim(),
+    manufacturer: ($('d-manu').value || '').trim(),
+    model: ($('d-model').value || '').trim(),
+  };
+}
+
+async function buildProfile(save) {
+  if (!S.refId) { msg('p-msg', 'Choisis une capture de référence dans le générateur.', 'warn'); return null; }
+  const dev = deviceMeta();
+  if (!dev.id || !dev.name) { msg('p-msg', 'Il faut au moins un nom et un identifiant.', 'warn'); return null; }
+  const entities = deriveEntities();
+  if (!entities.length) {
+    msg('p-msg', 'Aucune entité déduite : nomme des champs reconnus (light, lum, cct, '
+      + 'fan, speed, reverse, mode, timer) ou édite le JSON à la main.', 'warn');
+    return null;
+  }
+  try {
+    const r = await SEND('profile', { ref_id: S.refId, gap: gap(), device: dev,
+                                      entities, save: !!save });
+    return r;
+  } catch (e) {
+    msg('p-msg', e.message, 'err');
+    return null;
+  }
+}
+
+$('p-build').onclick = async () => {
+  const r = await buildProfile(false);
+  if (!r) return;
+  const ref = S.rows.find(x => x.id === S.refId);
+  msg('p-msg', `Profil prêt : ${r.profile.entities.length} entité(s), `
+    + `${r.profile.fields.length} champs, référence « ${ref?.name} ». `
+    + `Télécharge-le pour le sauvegarder ou le partager.`, 'ok');
+  show(JSON.stringify(r.profile, null, 2), `${r.profile.device.id}.json`);
+};
+
+$('p-save').onclick = async () => {
+  const r = await buildProfile(true);
+  if (!r) return;
+  msg('p-msg', `Écrit dans ${r.saved} — RF Bridge le lira au démarrage.`, 'ok');
+};
+
+/* --- import : le partage, et pourquoi il faut réancrer --- */
+$('p-import').onclick = () => $('p-file').click();
+$('p-file').onchange = async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  ev.target.value = '';
+  let prof;
+  try {
+    prof = JSON.parse(await file.text());
+  } catch (e) {
+    return msg('p-msg', `${file.name} n'est pas du JSON valide.`, 'err');
+  }
+  const mine = confirm(
+    `Importer « ${prof?.device?.name || file.name} ».\n\n`
+    + `La carte des bits, le checksum et les entités seront repris.\n\n`
+    + `OK  = c'est MA télécommande (garder aussi sa capture de référence)\n`
+    + `Annuler = profil de quelqu'un d'autre : je capturerai ma propre trame\n\n`
+    + `La référence porte l'ID appairé : celle d'un autre exemplaire ne pilotera `
+    + `pas ton appareil.`);
+  try {
+    const r = await SEND('profile/import', { profile: prof, keep_reference: mine });
+    if (r.device?.name) $('d-name').value = r.device.name;
+    if (r.device?.id) $('d-id').value = r.device.id;
+    if (r.device?.manufacturer) $('d-manu').value = r.device.manufacturer;
+    if (r.device?.model) $('d-model').value = r.device.model;
+    await loadAnalyze();
+    msg('p-msg', `Importé : ${r.fields} champs, ${r.entities} entité(s).`
+      + (r.hint ? ' ' + r.hint : ''), r.hint ? 'warn' : 'ok');
+  } catch (e) {
+    msg('p-msg', e.message, 'err');
+  }
+};
+
+$('exp-json').onclick = () => {
+  const map = {
+    gap: gap(), mode: mode(),
+    frame_length: S.analysis.length,
+    varying_bits: S.analysis.varying,
+    checksum: S.checksum,
+    fields: S.fields.map(f => ({ ...f, width: width(f) })),
+    // correspondance observée : métadonnées physiques -> valeur brute du champ
+    observed: S.rows.filter(r => r.bits).map(r => ({
+      name: r.name, meta: r.meta,
+      values: Object.fromEntries(S.fields.map(f =>
+        [f.name, fieldValue(r.bits, f.start, f.end, f.msb_first !== false)])),
+      bits: r.bits,
+    })),
+  };
+  show(JSON.stringify(map, null, 2), 'rf_lab_fields.json');
+};
+
+function show(text, filename) {
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  $('exp-out').innerHTML =
+    `<div class="row" style="margin-bottom:8px">
+       <a href="${url}" download="${filename}"><button>Télécharger ${filename}</button></a>
+       <button id="cp">Copier</button>
+     </div><pre>${esc(text)}</pre>`;
+  $('cp').onclick = () => navigator.clipboard.writeText(text);
+}
+
+/* ------------------------------------------------------------ init */
+
+$('reload').onclick = () => { refreshStatus(); loadAnalyze(); };
+$('gap').onchange = loadAnalyze;
+$('mode').onchange = () => {
+  if (mode() === 'manchester')
+    msg('analysis-msg', 'Manchester : le diff fonctionne, mais la génération non — rebuild_frame exige les index PWM (cf. §7).', 'warn');
+  loadAnalyze();
+};
+$('sort').onchange = () => { renderGrid(); renderRefs(); };
+
+refreshStatus();
+loadAnalyze().catch(e => msg('analysis-msg', e.message, 'err'));
+</script>
+</body>
+</html>

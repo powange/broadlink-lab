@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""
+RF Bridge de bout en bout : broker MQTT réel (amqtt, python pur) + faux RM4.
+
+Vérifie que le pont publie un vrai appareil HA, reçoit les commandes MQTT, et
+les traduit en trames RF correctes — le faux RM4 décode ce qu'on lui envoie,
+donc on lit noir sur blanc l'état parti sur les ondes.
+
+Aucun matériel, aucun Mosquitto : `./dev/test.sh` le lance seul.
+"""
+import asyncio
+import json
+import os
+import subprocess
+import sys
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+sys.path.insert(0, HERE)
+sys.path.insert(0, os.path.join(ROOT, "rf_bridge"))
+
+import paho.mqtt.client as mqtt  # noqa: E402
+
+import decoder  # noqa: E402
+import real_seed  # noqa: E402
+
+PORT = int(os.environ.get("MQTT_TEST_PORT", "18830"))
+PROFILE_DIR = os.path.join(HERE, ".profiles")
+STATE_DIR = os.path.join(HERE, ".bridge_state")
+
+ok = True
+seen = {}          # topic -> dernier payload retenu
+
+
+def check(label, cond, extra=""):
+    global ok
+    ok &= bool(cond)
+    print(f"  {'✓' if cond else '✗'} {label}{'  — ' + str(extra) if extra else ''}")
+
+
+def write_profile():
+    """Un profil Mantra complet, bâti sur les VRAIES captures (§10)."""
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    store = real_seed.store()
+    prof = {
+        "version": 1,
+        "device": {"id": "mantra_nenufar", "name": "Mantra Nenufar",
+                   "manufacturer": "Mantra", "model": "RF00234"},
+        "rf": {"frequency": 433.92, "gap": 2000,
+               "reference_b64": store["captures"][0]["b64"],
+               "reference_name": store["captures"][0]["name"]},
+        "fields": store["fields"],
+        "checksum": store["checksum"],
+        "entities": [
+            {"type": "light", "id": "light", "name": "Lumière", "power": "light",
+             "brightness": {"field": "lum", "min": 1, "max": 11},
+             "color_temp": {"field": "cct", "min": 1, "max": 7, "kelvin": [3000, 5000]}},
+            {"type": "fan", "id": "fan", "name": "Ventilateur", "power": "fan",
+             "percentage": {"field": "speed", "min": 1, "max": 8},
+             "direction": "reverse",
+             "preset": {"field": "mode", "options": ["normal", "nuit", "eco"]}},
+            {"type": "number", "id": "timer", "name": "Minuterie", "field": "timer",
+             "scale": 2, "unit": "min"},
+        ],
+    }
+    with open(os.path.join(PROFILE_DIR, "mantra_nenufar.json"), "w") as fh:
+        json.dump(prof, fh, indent=2, ensure_ascii=False)
+    return prof
+
+
+async def run_broker():
+    from amqtt.broker import Broker
+    broker = Broker({
+        "listeners": {"default": {"type": "tcp", "bind": f"127.0.0.1:{PORT}"}},
+        "sys_interval": 0,
+        "auth": {"allow-anonymous": True},
+        "topic-check": {"enabled": False},
+    })
+    await broker.start()
+    return broker
+
+
+def start_broker():
+    loop = asyncio.new_event_loop()
+    import threading
+    t = threading.Thread(target=loop.run_forever, daemon=True)
+    t.start()
+    fut = asyncio.run_coroutine_threadsafe(run_broker(), loop)
+    fut.result(timeout=15)
+    return loop
+
+
+def main():
+    prof = write_profile()
+    for d in (STATE_DIR,):
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                os.remove(os.path.join(d, f))
+
+    print("  démarrage du broker amqtt…")
+    start_broker()
+    time.sleep(1)
+
+    env = dict(os.environ,
+               MQTT_HOST="127.0.0.1", MQTT_PORT=str(PORT),
+               PROFILE_DIR=PROFILE_DIR, STATE_DIR=STATE_DIR,
+               DEVICE_IP="192.168.0.99", LOG_LEVEL="info",
+               PYTHONPATH=f"{HERE}:{os.path.join(ROOT, 'rf_bridge')}")
+    # substitution du faux RM4 sans toucher à bridge.py
+    boot = (
+        "import sys; sys.path.insert(0, %r)\n"
+        "import fake_broadlink\n"
+        "sys.modules['broadlink'] = fake_broadlink\n"
+        "sys.modules['broadlink.exceptions'] = fake_broadlink.exceptions\n"
+        "exec(compile(open(%r).read(), 'bridge.py', 'exec'), "
+        "{'__name__': '__main__', '__file__': 'bridge.py'})\n"
+        % (HERE, os.path.join(ROOT, "rf_bridge", "bridge.py"))
+    )
+    proc = subprocess.Popen([sys.executable, "-c", boot], env=env,
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, cwd=os.path.join(ROOT, "rf_bridge"))
+
+    cli = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="test-observer")
+    cli.on_message = lambda c, u, m: seen.__setitem__(m.topic, m.payload.decode())
+    for _ in range(40):
+        try:
+            cli.connect("127.0.0.1", PORT, 30)
+            break
+        except OSError:
+            time.sleep(0.25)
+    cli.subscribe("homeassistant/#")
+    cli.subscribe("rf_bridge/#")
+    cli.loop_start()
+
+    def wait_for(pred, label, timeout=15):
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            if pred():
+                return True
+            time.sleep(0.15)
+        print(f"    (timeout: {label})")
+        return False
+
+    try:
+        # ---- discovery : HA doit voir un APPAREIL, pas des entités éparpillées
+        got = wait_for(lambda: any(t.endswith("/config") for t in seen), "discovery")
+        check("le pont publie la discovery MQTT", got)
+        cfgs = {t: json.loads(p) for t, p in seen.items() if t.endswith("/config")}
+        check("3 entités publiées (lumière, ventilateur, minuterie)", len(cfgs) == 3,
+              sorted(t.split("/")[1] for t in cfgs))
+        comps = sorted(t.split("/")[1] for t in cfgs)
+        check("les bons composants HA", comps == ["fan", "light", "number"], comps)
+
+        anycfg = next(iter(cfgs.values()))
+        dev = anycfg.get("device", {})
+        check("un seul appareil, correctement identifié",
+              dev.get("identifiers") == ["mantra_nenufar"]
+              and dev.get("name") == "Mantra Nenufar"
+              and dev.get("manufacturer") == "Mantra"
+              and dev.get("model") == "RF00234", dev)
+        check("toutes les entités sont sous CE device",
+              all(c["device"]["identifiers"] == ["mantra_nenufar"] for c in cfgs.values()))
+        check("disponibilité annoncée (le pont peut être arrêté)",
+              all(c.get("availability_topic") == "rf_bridge/status" for c in cfgs.values()))
+        check("statut en ligne", seen.get("rf_bridge/status") == "online",
+              seen.get("rf_bridge/status"))
+
+        lightcfg = next(c for t, c in cfgs.items() if "/light/" in t)
+        check("lumière : schéma JSON + luminosité + température",
+              lightcfg.get("schema") == "json" and lightcfg.get("brightness") is True
+              and lightcfg.get("supported_color_modes") == ["color_temp"])
+        check("mireds calculés depuis les kelvins du profil",
+              lightcfg.get("min_mireds") == 200 and lightcfg.get("max_mireds") == 333,
+              f"{lightcfg.get('min_mireds')}-{lightcfg.get('max_mireds')}")
+
+        fancfg = next(c for t, c in cfgs.items() if "/fan/" in t)
+        check("ventilateur : 8 vitesses, sens, presets",
+              fancfg.get("speed_range_min") == 1 and fancfg.get("speed_range_max") == 8
+              and "direction_command_topic" in fancfg
+              and fancfg.get("preset_modes") == ["normal", "nuit", "eco"])
+
+        numcfg = next(c for t, c in cfgs.items() if "/number/" in t)
+        check("minuterie : 0-510 min par pas de 2 (le champ compte en 2 min)",
+              numcfg.get("min") == 0 and numcfg.get("max") == 510
+              and numcfg.get("step") == 2 and numcfg.get("unit_of_measurement") == "min",
+              f"{numcfg.get('min')}-{numcfg.get('max')} pas {numcfg.get('step')}")
+
+        # ---- commandes -> trames RF. Le faux RM4 décode ce qu'il reçoit.
+        def emitted():
+            out = []
+            for line in log_lines():
+                if "] émis -> " in line:
+                    out.append(line.split("] émis -> ", 1)[1].strip())
+            return out
+
+        def log_lines():
+            # on lit sans bloquer ce que le pont a écrit jusqu'ici
+            import fcntl
+            fd = proc.stdout.fileno()
+            fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+            fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+            try:
+                return (proc.stdout.read() or "").splitlines()
+            except Exception:                     # noqa: BLE001
+                return []
+
+        buf = []
+
+        def emit_count():
+            buf.extend(log_lines())
+            return sum(1 for l in buf if "] émis -> " in l)
+
+        before = emit_count()
+        cli.publish("rf_bridge/mantra_nenufar/light/set",
+                    json.dumps({"state": "ON", "brightness": 128}))
+        got = wait_for(lambda: emit_count() > before, "émission lumière")
+        check("commande lumière -> trame émise", got)
+        last = [l for l in buf if "] émis -> " in l][-1] if got else ""
+        check("luminosité 128/255 -> palier 6 sur 11", "'lum': 6" in last, last[-90:])
+        check("la lampe est allumée", "'light': 1" in last)
+
+        before = emit_count()
+        cli.publish("rf_bridge/mantra_nenufar/fan/pct/set", "8")
+        wait_for(lambda: emit_count() > before, "émission vitesse")
+        last = [l for l in buf if "] émis -> " in l][-1]
+        check("vitesse 8 -> speed=8 ET ventilo allumé",
+              "'speed': 8" in last and "'fan': 1" in last, last[-90:])
+
+        before = emit_count()
+        cli.publish("rf_bridge/mantra_nenufar/fan/pct/set", "0")
+        wait_for(lambda: emit_count() > before, "émission vitesse 0")
+        last = [l for l in buf if "] émis -> " in l][-1]
+        # couper ne remet JAMAIS un niveau à zéro dans ce protocole (§10)
+        check("0 % éteint le ventilo mais laisse speed=8",
+              "'fan': 0" in last and "'speed': 8" in last, last[-90:])
+
+        before = emit_count()
+        cli.publish("rf_bridge/mantra_nenufar/fan/preset/set", "eco")
+        wait_for(lambda: emit_count() > before, "émission preset")
+        last = [l for l in buf if "] émis -> " in l][-1]
+        check("preset « eco » -> mode=2", "'mode': 2" in last, last[-90:])
+
+        before = emit_count()
+        cli.publish("rf_bridge/mantra_nenufar/timer/set", "20")
+        wait_for(lambda: emit_count() > before, "émission timer")
+        last = [l for l in buf if "] émis -> " in l][-1]
+        check("minuterie 20 min -> champ brut 10 (unités de 2 min)",
+              "'timer': 10" in last, last[-90:])
+
+        # ---- l'état publié, retenu, reflète les commandes
+        got = wait_for(lambda: "rf_bridge/mantra_nenufar/light/state" in seen, "état lumière")
+        check("état de la lumière republié", got)
+        st = json.loads(seen["rf_bridge/mantra_nenufar/light/state"])
+        check("état optimiste : ON + luminosité + température",
+              st.get("state") == "ON" and st.get("brightness") and st.get("color_temp"), st)
+        check("état du ventilateur republié",
+              seen.get("rf_bridge/mantra_nenufar/fan/state") == "OFF",
+              seen.get("rf_bridge/mantra_nenufar/fan/state"))
+        check("preset republié", seen.get("rf_bridge/mantra_nenufar/fan/preset/state") == "eco",
+              seen.get("rf_bridge/mantra_nenufar/fan/preset/state"))
+        check("minuterie republiée en minutes",
+              seen.get("rf_bridge/mantra_nenufar/timer/state") == "20",
+              seen.get("rf_bridge/mantra_nenufar/timer/state"))
+
+        # ---- persistance : au redémarrage, l'état ne doit pas repartir de zéro
+        # (réémettre un défaut rallumerait la lampe de quelqu'un à 3 h du matin)
+        sf = os.path.join(STATE_DIR, "state_mantra_nenufar.json")
+        check("état persisté sur disque", os.path.exists(sf))
+        if os.path.exists(sf):
+            saved = json.load(open(sf))
+            check("l'état sauvegardé porte bien les dernières commandes",
+                  saved.get("mode") == 2 and saved.get("timer") == 10
+                  and saved.get("fan") == 0, saved)
+
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        cli.loop_stop()
+
+    print("\n=>", "OK" if ok else "ÉCHEC")
+    return 0 if ok else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,35 @@
+name: RF Bridge
+version: "0.1.0"
+slug: rf_bridge
+description: >-
+  Transforme les profils d'appareil produits par RF Lab en appareils Home
+  Assistant, via MQTT discovery. Générique : il ne connaît aucune télécommande
+  en particulier, il applique le profil qu'on lui donne.
+url: https://github.com/powange/broadlink-lab/tree/main/rf_bridge
+arch:
+  - aarch64
+  - amd64
+init: false
+
+# Pas d'ingress : le pont n'a pas d'UI, il tourne en tâche de fond.
+host_network: true
+
+# Le broker MQTT (addon Mosquitto). `need` = le pont refuse de démarrer sans.
+services:
+  - mqtt:need
+
+# Lecture seule : le pont consomme les profils, il n'en produit pas.
+map:
+  - share:ro
+
+options:
+  device_ip: ""
+  profiles: []
+  log_level: info
+
+schema:
+  device_ip: str?
+  # Vide = tous les profils de /share/rf_lab/. Sinon, la liste des ids voulus.
+  profiles:
+    - str?
+  log_level: list(trace|debug|info|warning|error)?
