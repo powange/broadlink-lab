@@ -160,3 +160,11 @@ dev/venv/bin/python dev/serve.py --device <ip>      # le vrai
 
 Détails dans [dev/README.md](dev/README.md). Le protocole décodé, les décisions
 d'architecture et les pièges rencontrés sont dans [CLAUDE.md](CLAUDE.md).
+
+## Licence
+
+[MIT](LICENSE) — fais-en ce que tu veux, garde la mention de copyright.
+
+Le code de `shared/decoder.py` s'appuie sur le format de paquet de
+[python-broadlink](https://github.com/mjg59/python-broadlink) (MIT), utilisé comme
+dépendance.
