@@ -122,6 +122,18 @@ $('dlg').close('ok');
 await sleep(700);
 check('champ persisté via POST /api/fields', $('fields-box').textContent.includes('lum'));
 
+// --- 4bis. rouvrir un champ existant pour le modifier, sans resélectionner
+const chip = [...$('fields-box').querySelectorAll('[data-edit]')].find(b => b.textContent === 'lum');
+check('un champ nommé est cliquable pour édition', !!chip);
+chip.dispatchEvent(new window.MouseEvent('click', { bubbles: true, view: window }));
+await sleep(120);
+check('cliquer le champ rouvre le dialogue sur sa tranche',
+  $('dlg').open && $('dlg-range').textContent === '[8, 12) — 4 bits', $('dlg-range').textContent);
+check('le dialogue est pré-rempli avec le nom du champ', $('f-name').value === 'lum',
+  $('f-name').value);
+$('dlg').close('cancel');
+await sleep(200);
+
 // --- 5. valeurs décodées : le pattern doit devenir lisible d'un coup d'œil
 const html = $('grid-wrap').innerHTML;
 check('lum10 → 0001 = 1', /lum <b class="mono">0001<\/b> = 1/.test(html));

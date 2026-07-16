@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## 0.5.3
+
+**On peut modifier un champ existant** : cliquer son nom dans la liste rouvre le
+dialogue de nommage, pré-rempli. Avant, il fallait resélectionner ses colonnes
+dans la grille — et sur un champ déjà nommé, ce n'était pas évident.
+
+**La correspondance physique de la luminosité est déduite et exportée.** Le labo
+lit dans tes métadonnées que le brut 2 vaut 10 % et le porte dans le profil
+(`brightness.percent`). Sans ça, RF Bridge affichait la télécommande à 10 % comme
+si elle était à 0 %. C'est le même principe que le `kelvin` déjà porté pour le CCT.
+
 ## 0.5.2
 
 **Le labo produit une entité ventilateur même sans bit d'alimentation.** Il

@@ -787,8 +787,11 @@ un vrai WSGI avant de s'en servir en production.
   jamais utilisé : pas de ré-auth si la session RM4 expire.
 - **`/api/status` déclenche une découverte broadcast de 5 s à chaque appel** tant que
   `device_ip` est vide. L'UI n'appelle donc `status` qu'au chargement et sur le bouton.
-- **Le YAML d'export s'appuie sur les valeurs brutes**, pas sur les grandeurs
-  physiques (cf. §6.5) : le mapping reste à reporter à la main dans les templates.
+- **La correspondance physique est portée pour la luminosité** (`brightness.percent`),
+  déduite des métadonnées de capture par le labo : brut 2 = 10 %, pas 0 %. Sans
+  elle, HA affichait la télécommande à 10 % comme si elle était éteinte. Même
+  principe que le `kelvin` du CCT. Le YAML d'export, lui, reste sur les valeurs
+  brutes (cf. §6.5).
 
 - **`compute_checksum` est probablement faux sur un cas réel.** Il calcule sur
   `bits[:crc_start] + bits[crc_end:]` puis repadde à l'octet : si le champ CRC n'est

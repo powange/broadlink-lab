@@ -192,6 +192,12 @@ check('lumière : power + luminosité 1-11 + CCT 1-7 en kelvins',
   ents.light.power === 'light' && ents.light.brightness.max === 11
   && ents.light.color_temp.max === 7
   && JSON.stringify(ents.light.color_temp.kelvin) === '[3000,5000]');
+// La correspondance physique, déduite des métadonnées : brut 1 = 1 %, brut 11 =
+// 100 %. C'est elle qui fait afficher la vraie luminosité dans HA plutôt que le
+// bas de l'échelle des bits.
+check('luminosité : grandeur physique portée (percent), pas seulement le brut',
+  JSON.stringify(ents.light.brightness.percent) === '[1,100]',
+  JSON.stringify(ents.light.brightness.percent));
 check('ventilateur : vitesse 1-8, sens, presets',
   ents.fan.power === 'fan' && ents.fan.percentage.max === 8
   && ents.fan.direction === 'reverse'

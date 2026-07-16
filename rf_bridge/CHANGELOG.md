@@ -1,5 +1,14 @@
 # Journal des modifications
 
+## 0.5.5
+
+**La luminosité s'affiche à sa vraie valeur.** La télécommande réglée à 10 %
+apparaissait à ~0 % dans HA — au point de sembler éteinte. Le pont mappait la
+plage BRUTE des bits (2→11) sur 0→100 %, sans savoir que le brut 2 vaut déjà
+10 %. Les profils portent maintenant cette correspondance (`brightness.percent`),
+et brut 2 s'affiche à 10 %. Les profils sans cette information gardent l'ancien
+comportement.
+
 ## 0.5.4
 
 **L'UI ne se bloque plus (504) quand l'écoute tourne, et le sens de rotation se

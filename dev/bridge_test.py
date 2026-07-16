@@ -388,9 +388,11 @@ def main():
             "checksum": {"kind": "sub8", "k": 0x55},
             "entities": [
                 {"type": "light", "id": "light", "name": "Lumière", "power": "light",
-                 "brightness": {"field": "lum", "min": 2, "max": 11}},
+                 # brut 2 = 10 %, brut 11 = 100 % : sans ça HA affiche la
+                 # télécommande à 10 % comme si elle était à ~0 %.
+                 "brightness": {"field": "lum", "min": 2, "max": 11, "percent": [10, 100]}},
                 {"type": "fan", "id": "fan", "name": "Ventilateur", "power": "light",
-                 "percentage": {"field": "speed", "min": 0, "max": 7},
+                 "percentage": {"field": "speed", "min": 0, "max": 6},
                  "direction": "reverse"},
             ],
         }
@@ -496,6 +498,12 @@ def main():
                        "2e état republié", 20)
         check("la 2e trame met HA à jour aussi", got,
               seen.get("rf_bridge/flower/light/state"))
+        # captures[22] = lum10 = brut 2. Avec `percent` [10,100], HA doit
+        # afficher ~10 % (26/255), PAS ~0 % (1/255) : c'est tout l'objet du
+        # correctif. Sans lui, la télécommande à 10 % semblait éteinte.
+        st2 = json.loads(seen.get("rf_bridge/flower/light/state") or "{}")
+        check("brut 2 (10 %) -> ~26/255, pas 1/255 (la correspondance physique)",
+              24 <= st2.get("brightness", 0) <= 28, st2.get("brightness"))
 
         # Le SENS doit se synchroniser lui aussi. C'est un toggle — le récepteur
         # ignore la valeur et bascule — mais en écoute, le bit dit ce que la

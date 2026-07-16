@@ -1,5 +1,5 @@
 name: RF Lab
-version: "0.5.2"
+version: "0.5.3"
 slug: rf_lab
 description: >-
   Rétro-ingénierie de télécommandes RF via un Broadlink RM4 Pro. Capture, diffé,

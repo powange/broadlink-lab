@@ -177,6 +177,20 @@ def _rng(ref, fields):
     return ref["field"], lo, hi
 
 
+def _ha_brightness(ref):
+    """
+    Bornes de luminosité côté HA (échelle 1..255) pour un champ.
+
+    Avec `percent`, la borne basse reflète la vraie grandeur physique : brut
+    minimum = 10 % -> HA 26, et non 1. Sans quoi la télécommande réglée à 10 %
+    s'affiche à ~0 % dans HA. Absent -> échelle pleine, comme avant.
+    """
+    pct = ref.get("percent") if isinstance(ref, dict) else None
+    if pct and len(pct) == 2:
+        return max(1, round(pct[0] / 100 * 255)), round(pct[1] / 100 * 255)
+    return 1, 255
+
+
 # ------------------------------------------------------------ un appareil
 
 class Device:
@@ -494,7 +508,8 @@ class Device:
                 pl = {"state": "ON" if s.get(pf) else "OFF"}
                 if e.get("brightness"):
                     f, lo, hi = _rng(e["brightness"], self.fields)
-                    pl["brightness"] = _scale(s.get(f, lo), (lo, hi), (1, 255))
+                    pl["brightness"] = _scale(s.get(f, lo), (lo, hi),
+                                              _ha_brightness(e["brightness"]))
                 if e.get("color_temp"):
                     f, lo, hi = _rng(e["color_temp"], self.fields)
                     kmin, kmax = e["color_temp"].get("kelvin", [3000, 5000])
@@ -574,7 +589,7 @@ class Device:
                 ch[pf] = 1 if pl["state"] == "ON" else 0
             if "brightness" in pl and e.get("brightness"):
                 f, lo, hi = _rng(e["brightness"], self.fields)
-                ch[f] = _scale(pl["brightness"], (1, 255), (lo, hi))
+                ch[f] = _scale(pl["brightness"], _ha_brightness(e["brightness"]), (lo, hi))
                 ch[pf] = 1
             if "color_temp" in pl and e.get("color_temp"):
                 f, lo, hi = _rng(e["color_temp"], self.fields)

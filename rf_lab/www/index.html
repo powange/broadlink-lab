@@ -1026,7 +1026,7 @@ function renderFields() {
   }
   box.innerHTML = S.fields.map(f => `
     <span class="field-chip ${f.role === 'crc' ? 'crc' : ''} ${f.role === 'const' ? 'const' : ''}">
-      <b>${esc(f.name)}</b>
+      <b data-edit="${f.start},${f.end}" style="cursor:pointer" title="Cliquer pour modifier ce champ">${esc(f.name)}</b>
       <span class="mono dim">[${f.start},${f.end}) ${width(f)}b${
         f.role === 'const' ? ' const' : (f.min != null || f.max != null ? ` ${minOf(f)}-${maxOf(f)}` : '')}</span>
       ${f.identity ? '<span class="mono" style="color:var(--ok)" title="Identifie la télécommande — c\'est ce qui permet au pont de reconnaître ses trames">id</span>' : ''}
@@ -1048,6 +1048,14 @@ function renderFields() {
       checksum: S.checksum,
     });
     await loadAnalyze();
+  });
+
+  // Rouvrir un champ pour le modifier sans avoir à resélectionner ses colonnes
+  // dans la grille. openDialog lit S.sel : on le pose sur la tranche du champ.
+  box.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => {
+    const [start, end] = b.dataset.edit.split(',').map(Number);
+    S.sel = { start, end };
+    openDialog();
   });
 }
 
@@ -1179,13 +1187,38 @@ $('send2').onclick = () => emit(2);
 /* Les entités sont déduites des noms de champs reconnus. Le reste de l'outil est
    générique ; cette correspondance-là ne l'est pas — elle sait ce qu'est une
    lampe et un ventilateur. Pour un autre appareil, éditer le JSON à la main. */
+// La grandeur PHYSIQUE d'un champ, lue dans les métadonnées de capture.
+// Sans elle, HA mappe le brut [2,11] sur [0,100 %] : la télécommande à 10 %
+// (brut 2) s'affiche à ~0 %. Avec elle, brut 2 = 10 %. C'est le même principe
+// que le `kelvin` du CCT, mais pour la luminosité — et le labo est le seul à
+// pouvoir le savoir, puisque la correspondance vit dans ce que tu as saisi.
+function physPercent(field) {
+  const pts = [];
+  for (const r of S.rows) {
+    const v = r.meta?.[field.name];
+    if (typeof v !== 'number' || !r.bits) continue;
+    pts.push([fieldValue(r.bits, field.start, field.end, field.msb_first !== false), v]);
+  }
+  if (pts.length < 2) return null;
+  pts.sort((a, b) => a[0] - b[0]);
+  const lo = pts[0], hi = pts[pts.length - 1];
+  // il faut que la grandeur croisse avec le brut, sinon ce n'est pas une échelle
+  if (lo[0] === hi[0] || hi[1] <= lo[1]) return null;
+  return [lo[1], hi[1]];
+}
+
 function deriveEntities() {
   const f = (n) => S.fields.find(x => x.name === n && x.role !== 'const' && x.role !== 'crc');
   const ents = [];
 
   if (f('light')) {
     const e = { type: 'light', id: 'light', name: 'Lumière', power: 'light' };
-    if (f('lum')) e.brightness = { field: 'lum', min: minOf(f('lum')), max: maxOf(f('lum')) };
+    if (f('lum')) {
+      const b = { field: 'lum', min: minOf(f('lum')), max: maxOf(f('lum')) };
+      const p = physPercent(f('lum'));
+      if (p) b.percent = p;               // brut 2 = 10%, pas 0% (cf. physPercent)
+      e.brightness = b;
+    }
     if (f('cct')) e.color_temp = { field: 'cct', min: minOf(f('cct')), max: maxOf(f('cct')),
                                    kelvin: [3000, 5000] };
     ents.push(e);
