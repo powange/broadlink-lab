@@ -1,5 +1,17 @@
 # Journal des modifications
 
+## 0.5.2
+
+**Le ventilateur d'une télécommande sans bit d'alimentation apparaît enfin dans
+HA.** L'appareil se créait, mais sans ses commandes de ventilateur — seuls la
+lumière et le timer étaient là.
+
+Home Assistant réserve la valeur *sous* `speed_range_min` pour « éteint », et
+exige donc un minimum ≥ 1. Sur la Mantra R00143, la vitesse 0 **est** l'arrêt, et
+le pont publiait `speed_range_min: 0` — ce qui faisait rejeter toute l'entité
+ventilateur par HA, sans le moindre message. La plage commence maintenant à 1, et
+le 0 sert d'« éteint » comme HA l'attend.
+
 ## 0.5.1
 
 **Un ventilateur sans bit d'alimentation est enfin importable.** La validation

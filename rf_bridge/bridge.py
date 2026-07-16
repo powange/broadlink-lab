@@ -411,9 +411,15 @@ class Device:
                    "state_topic": self.t(oid, "state")}
             if e.get("percentage"):
                 _, lo, hi = _rng(e["percentage"], self.fields)
+                # HA réserve la valeur SOUS speed_range_min pour « éteint » et
+                # exige donc un minimum >= 1. Sur un ventilateur sans bit
+                # d'alimentation, la vitesse 0 EST l'arrêt : la plage HA commence
+                # à 1, et le 0 lui sert justement d'« éteint ». Publier 0 ici
+                # faisait rejeter TOUTE l'entité par HA, en silence.
                 cfg.update(percentage_command_topic=self.t(oid, "pct", "set"),
                            percentage_state_topic=self.t(oid, "pct", "state"),
-                           speed_range_min=lo, speed_range_max=hi)
+                           speed_range_min=max(1, lo),
+                           speed_range_max=max(hi, max(1, lo)))
             if e.get("direction"):
                 cfg.update(direction_command_topic=self.t(oid, "dir", "set"),
                            direction_state_topic=self.t(oid, "dir", "state"))

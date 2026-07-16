@@ -378,7 +378,7 @@ def main():
                 {"name": "cct", "start": 19, "end": 24, "role": "data", "min": 4, "max": 24},
                 {"name": "light", "start": 24, "end": 25, "role": "data", "min": 0, "max": 1},
                 {"name": "speed", "start": 25, "end": 28, "role": "data",
-                 "min": 0, "max": 7, "requires": {"cmd": 10}},
+                 "min": 0, "max": 6, "requires": {"cmd": 10}},
                 {"name": "lum", "start": 28, "end": 32, "role": "data", "min": 2, "max": 11},
                 {"name": "timer", "start": 32, "end": 36, "role": "data",
                  "min": 0, "max": 8, "requires": {"cmd": 14}},
@@ -399,6 +399,14 @@ def main():
         got = wait_for(lambda: any("/flower/" in t and t.endswith("/config") for t in seen),
                        "profil v2 détecté", 25)
         check("un profil v2 se charge", got)
+
+        # Un ventilateur SANS bit d'alimentation (speed 0 = éteint) : HA exige
+        # speed_range_min >= 1, sinon il rejette TOUTE l'entité fan en silence.
+        fan_cfg = json.loads(seen.get("homeassistant/fan/flower/fan/config") or "{}")
+        check("l'entité ventilateur de la R00143 est bien publiée", bool(fan_cfg),
+              [t for t in seen if "/flower/" in t and t.endswith("config")])
+        check("speed_range_min >= 1 (0 est réservé à « éteint » par HA)",
+              fan_cfg.get("speed_range_min", 0) >= 1, fan_cfg.get("speed_range_min"))
 
         def flower_frames():
             buf.extend(log_lines())
