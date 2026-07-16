@@ -108,9 +108,20 @@ devient alors d'une lisibilité totale.
 5. Passe en `const` tout ce qui ne doit jamais être réécrit — préambule et ID
    appairé en tête de trame. Y toucher, et le récepteur ignore tout.
 6. Génère un état inédit, émets, regarde l'appareil.
+7. **Émets deux fois la même valeur.** Si l'appareil change à la seconde, ce
+   champ est une *action*, pas un état : le récepteur ignore la valeur et
+   bascule. Déclare-le, sinon Home Assistant l'inversera à chaque commande.
 
 **Les métadonnées de capture sont obligatoires, et c'est le cœur de la méthode** :
 sans elles, on ne peut corréler aucun champ de bits à une grandeur physique.
+
+**La carte des bits ne dit pas tout.** Elle décrit ce que la télécommande
+*pense* ; elle ne dit rien de ce que le récepteur *fait*. Sur un vrai
+ventilateur, le sens de rotation s'inverse à chaque trame quoi que porte son bit,
+et la vitesse n'est appliquée que si l'octet de commande vaut la bonne valeur —
+si bien que régler vitesse *et* sens demande deux trames. Aucun diff ne le
+montre : il faut émettre et regarder. Le dialogue de nommage permet de le
+déclarer, et le pont s'y conforme.
 
 **Attention aux toggles.** Un bouton « inverser le sens » ne t'annonce pas le
 résultat, il le bascule. Étiquette avec l'état **obtenu**, pas avec le bouton pressé.

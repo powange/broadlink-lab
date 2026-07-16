@@ -30,6 +30,12 @@ const dom = new JSDOM(fs.readFileSync(INDEX, 'utf8'), {
   beforeParse(w) { w.fetch = (u, o) => fetch(new URL(u, w.location.href), o); },
 });
 const { window } = dom;
+// jsdom n'implémente ni <dialog> ni les URL de blob
+window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+window.HTMLDialogElement.prototype.close = function (v) {
+  this.open = false; this.returnValue = v ?? this.returnValue;
+  this.dispatchEvent(new window.Event('close'));
+};
 window.URL.createObjectURL = () => 'blob:stub';
 
 const $ = (id) => window.document.getElementById(id);
@@ -89,6 +95,55 @@ check("basculer l'interrupteur change bien le bit 32 de la trame générée",
 lightSw.checked = was;
 lightSw.dispatchEvent(new window.Event('change'));
 
+// --- déclarer ce que le RÉCEPTEUR fait d'un champ (profil v2).
+// Ça ne se lit pas dans les bits : sur une Mantra R00143, le sens de rotation
+// s'inverse à chaque trame quoi que porte le bit, et la vitesse n'est appliquée
+// que si l'octet de commande vaut 10. Le labo doit pouvoir le déclarer, sinon le
+// pont ne peut pas piloter l'appareil.
+const openField = async (name) => {
+  const f = [...window.document.querySelectorAll('.field-chip b')]
+    .find(b => b.textContent === name);
+  const cell = (c) => $('grid-wrap').querySelector(`td.bit[data-col="${c}"]`);
+  const fld = (await fetch(new URL('api/analyze?gap=2000', BASE)).then(r => r.json()))
+    .fields.find(x => x.name === name);
+  const mouse = (el, t) => el.dispatchEvent(new window.MouseEvent(t, { bubbles: true, view: window }));
+  mouse(cell(fld.start), 'mousedown');
+  for (let i = fld.start; i < fld.end; i++) mouse(cell(i), 'mousemove');
+  window.dispatchEvent(new window.MouseEvent('mouseup', { bubbles: true }));
+  await sleep(120);
+  return fld;
+};
+
+await openField('reverse');
+check('le dialogue propose la sémantique du récepteur', !!$('f-sem'), 'select f-sem');
+check('… et la liste des champs conditionnants inclut les const',
+  [...$('f-req-f').options].map(o => o.value).includes('cmd'),
+  [...$('f-req-f').options].map(o => o.value).join(','));
+check('la valeur de la condition est bloquée tant qu\'aucun champ n\'est choisi',
+  $('f-req-v').disabled);
+$('f-sem').value = 'toggle';
+$('f-req-f').value = 'cmd';
+$('f-req-f').dispatchEvent(new window.Event('change'));
+check('choisir un champ débloque la valeur', !$('f-req-v').disabled);
+$('f-req-v').value = '12';
+$('dlg').close('ok');
+await sleep(600);
+check('la sémantique est persistée', (await fetch(new URL('api/analyze?gap=2000', BASE))
+  .then(r => r.json())).fields.find(f => f.name === 'reverse')?.semantics === 'toggle');
+
+await openField('speed');
+$('f-req-f').value = 'cmd';
+$('f-req-f').dispatchEvent(new window.Event('change'));
+$('f-req-v').value = '10';
+$('dlg').close('ok');
+await sleep(600);
+const back = (await fetch(new URL('api/analyze?gap=2000', BASE)).then(r => r.json())).fields;
+check('la condition est persistée',
+  JSON.stringify(back.find(f => f.name === 'speed')?.requires) === '{"cmd":10}',
+  JSON.stringify(back.find(f => f.name === 'speed')?.requires));
+check('les chips montrent la bascule et la condition',
+  /⇄/.test($('fields-box').innerHTML) && /si cmd=10/.test($('fields-box').innerHTML));
+
 // --- construction du profil : le livrable du labo
 $('d-name').value = 'Mantra Nenufar';
 $('d-manu').value = 'Mantra';
@@ -107,6 +162,12 @@ check('la référence voyage dans le profil (elle porte l\'ID appairé)',
   `${prof.rf.reference_b64?.length} car.`);
 check('la carte des 64 bits est embarquée', prof.fields.length === 11, prof.fields.length);
 check('le checksum est embarqué', prof.checksum.kind === 'sub8' && prof.checksum.k === 85);
+// LE livrable : ce que le pont a besoin de savoir et que les bits ne disent pas.
+check('le profil embarque la sémantique du récepteur',
+  prof.fields.find(f => f.name === 'reverse')?.semantics === 'toggle');
+check('le profil embarque la condition d\'application',
+  JSON.stringify(prof.fields.find(f => f.name === 'speed')?.requires) === '{"cmd":10}',
+  JSON.stringify(prof.fields.find(f => f.name === 'speed')?.requires));
 
 const ents = Object.fromEntries(prof.entities.map(e => [e.type, e]));
 check('3 entités déduites : light, fan, number',

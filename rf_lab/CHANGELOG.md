@@ -1,5 +1,25 @@
 # Journal des modifications
 
+## 0.5.0
+
+**Déclarer ce que le récepteur fait d'un champ** — le labo produit des profils v2.
+
+La carte des bits décrit ce que la télécommande *pense*. Elle ne dit rien de ce
+que le récepteur *fait*, et aucun diff ne peut le révéler : il faut émettre et
+regarder l'appareil. Le dialogue de nommage a donc deux nouvelles questions :
+
+- **il lit la valeur, ou il bascule ?** Un champ « bascule » s'inverse à chaque
+  trame quoi que porte son bit. Le sens de rotation d'une Mantra R00143 est comme
+  ça. Sans le déclarer, HA l'inverserait à chaque commande.
+- **seulement si ... vaut ...** Certains récepteurs n'appliquent qu'un champ à la
+  fois, désigné par un octet de commande. Régler vitesse *et* sens demande alors
+  deux trames — le pont les émet.
+
+Les chips le montrent : `⇄` pour une bascule, `si cmd=10` pour une condition.
+
+Ces deux réglages n'ont de sens qu'après avoir **émis pour voir**. Laissés tels
+quels, le comportement est celui d'avant.
+
 ## 0.4.4
 
 **Le générateur montre les valeurs plutôt que de les faire viser.** Un champ dont

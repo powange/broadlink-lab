@@ -280,6 +280,30 @@
       <div><button type="button" id="f-detect" title="Cherche le checksum qui explique toutes les captures">Détecter</button></div>
     </div>
     <div id="f-detect-msg"></div>
+
+    <!-- Ce que la trame ENCODE n'est pas ce que le récepteur EN FAIT. Aucun diff
+         de bits ne peut le dire : il faut émettre et regarder l'appareil. -->
+    <div id="f-recv" style="margin-bottom:6px">
+      <label style="margin-bottom:6px">et le récepteur, lui, qu'en fait-il ?</label>
+      <div class="row">
+        <div><label for="f-sem">il</label>
+          <select id="f-sem">
+            <option value="absolute">lit la valeur et s'y met</option>
+            <option value="toggle">bascule — il ignore la valeur</option>
+          </select></div>
+        <div><label for="f-req-f">mais seulement si</label>
+          <select id="f-req-f"><option value="">— toujours —</option></select></div>
+        <div><label for="f-req-v">vaut</label>
+          <input id="f-req-v" type="number" style="width:70px" placeholder="10" disabled></div>
+      </div>
+      <div class="dim" style="font-size:12px; margin-top:6px">
+        À laisser tel quel tant que tu n'as pas <b>émis pour voir</b> : ça ne se
+        lit pas dans les bits. Un champ « bascule » s'inverse à chaque trame, quoi
+        que porte le bit — le sens de rotation d'une Mantra R00143 est comme ça.
+        Une condition force une trame dédiée : régler deux champs conditionnés en
+        demande deux.
+      </div>
+    </div>
     <div class="row" style="justify-content:flex-end">
       <button value="cancel">Annuler</button>
       <button id="f-ok" value="ok" class="primary">Enregistrer</button>
@@ -892,11 +916,35 @@ function openDialog() {
   $('f-max').value = existing?.max ?? '';
   $('f-crc').value = S.checksum.kind || 'none';
   $('f-k').value = S.checksum.k != null ? '0x' + S.checksum.k.toString(16) : '';
+
+  // La condition peut viser n'importe quel autre champ — y compris un `const`.
+  // C'est le cas normal : l'octet de commande ne décrit rien de l'état de
+  // l'appareil, mais c'est lui qui décide de ce que le récepteur applique.
+  const req = existing?.requires || {};
+  const on = Object.keys(req)[0] || '';
+  $('f-req-f').innerHTML = '<option value="">— toujours —</option>' +
+    S.fields.filter(f => !(f.start === start && f.end === end) && f.role !== 'crc')
+      .map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+  $('f-req-f').value = on;
+  $('f-req-v').value = on ? req[on] : '';
+  $('f-sem').value = existing?.semantics || 'absolute';
   syncK();
+  syncRecv();
   msg('f-detect-msg', '');
   $('dlg').showModal();
   $('f-name').focus();
 }
+
+// Un champ const ou crc n'est jamais piloté : la question « qu'en fait le
+// récepteur ? » ne se pose pas pour lui.
+function syncRecv() {
+  const data = $('f-role').value === 'data';
+  $('f-recv').style.display = data ? '' : 'none';
+  $('f-req-v').disabled = !$('f-req-f').value;
+  if (!$('f-req-f').value) $('f-req-v').value = '';
+}
+$('f-role').addEventListener('change', syncRecv);
+$('f-req-f').addEventListener('change', syncRecv);
 
 const syncK = () => { $('f-k').disabled = $('f-crc').value !== 'sub8'; };
 $('f-crc').onchange = syncK;
@@ -947,6 +995,11 @@ $('dlg').addEventListener('close', async () => {
   };
   if ($('f-min').value !== '') f.min = +$('f-min').value;
   if ($('f-max').value !== '') f.max = +$('f-max').value;
+  if (f.role === 'data') {
+    if ($('f-sem').value === 'toggle') f.semantics = 'toggle';
+    const rq = $('f-req-f').value;
+    if (rq && $('f-req-v').value !== '') f.requires = { [rq]: +$('f-req-v').value };
+  }
   // un même nom ou une même tranche remplace l'existant
   const fields = S.fields.filter(x => x.name !== f.name && !(x.start === f.start && x.end === f.end));
   fields.push(f);
@@ -967,6 +1020,11 @@ function renderFields() {
       <b>${esc(f.name)}</b>
       <span class="mono dim">[${f.start},${f.end}) ${width(f)}b${
         f.role === 'const' ? ' const' : (f.min != null || f.max != null ? ` ${minOf(f)}-${maxOf(f)}` : '')}</span>
+      ${f.semantics === 'toggle'
+        ? '<span class="mono" style="color:var(--warn)" title="Le récepteur ignore la valeur et bascule à chaque trame">⇄</span>' : ''}
+      ${f.requires ? `<span class="mono" style="color:var(--accent)"
+          title="Ce champ n'est appliqué que si la trame porte cette valeur — il lui faut donc sa propre trame">si ${
+          esc(Object.entries(f.requires).map(([k, v]) => k + '=' + v).join(' '))}</span>` : ''}
       <button data-rm="${esc(f.name)}" title="Retirer">✕</button>
     </span>`).join('') +
     (S.checksum.kind !== 'none'
