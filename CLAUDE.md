@@ -355,6 +355,14 @@ Le labo et `find_frequency.py` cancellent déjà dans leur `finally` ; l'écoute
 pont l'avait oublié. Le faux RM4 modélise désormais cette exigence, donc un test
 échoue si le cancel disparaît.
 
+**L'écoute continue ne doit JAMAIS bloquer l'UI ni marteler un RM4 muet.**
+Vu sur le vrai matériel : l'UI du pont renvoyait 504 pendant que l'écoute
+tournait. Cause : `api_status`, appelé à chaque chargement, appelait `get_device`,
+qui réessaie 3 × 6 s sur un appareil injoignable. Le statut se rapporte
+maintenant sur la session en cache (`device_snapshot`), sans jamais reconnecter.
+Et la boucle d'écoute recule sur erreur (backoff jusqu'à 15 s), sort `get_device`
+du verrou radio, et lâche la session RM4 après 3 échecs pour la rouvrir propre.
+
 **C'est un appareil WiFi qui dort — le piège le plus coûteux du projet.** Le
 premier paquet le réveille et se perd : 10 % de perte et 267 ms de pic sur un
 appareil endormi, 11 ms une fois réveillé. Conséquence : **tout timeout court

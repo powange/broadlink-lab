@@ -127,6 +127,35 @@ def get_device(force=False):
         raise RuntimeError(f"{last} (3 essais — l'appareil est-il alimenté ?)")
 
 
+def reset_device():
+    """
+    Oublie la session RM4. La prochaine émission ou écoute rouvrira.
+
+    `get_device` mettait `_dev` en cache indéfiniment (cf. §points ouverts) : une
+    session morte n'était jamais renouvelée, et l'écoute martelait un appareil
+    qui ne répondait plus. On la lâche sur erreur réseau répétée.
+    """
+    global _dev
+    with _dev_lock:
+        _dev = None
+
+
+def device_snapshot():
+    """
+    État connu de la radio, SANS provoquer de reconnexion bloquante.
+
+    `api_status` s'en sert : un simple chargement d'UI ne doit JAMAIS déclencher
+    les 18 s de retry de `get_device`, sinon l'ingress de HA renvoie 504. On
+    rapporte la dernière session connue ; l'écoute et l'émission, elles, ont le
+    droit de bloquer pour (re)connecter, chacune dans son thread.
+    """
+    with _dev_lock:
+        if _dev is not None:
+            return {"connected": True, "model": _dev.model, "host": _dev.host[0]}
+    return {"connected": False,
+            "error": "pas encore connecté au Broadlink (ou tentative en cours)"}
+
+
 # ------------------------------------------------------------ conversions
 
 def _scale(value, src, dst):
@@ -292,10 +321,9 @@ class Device:
 
         Retourne True si la trame était pour nous.
 
-        LES TOGGLES SONT EXCLUS, et ce n'est pas un détail : le bit d'un champ
-        toggle dit ce que la TÉLÉCOMMANDE croit. Dès que le pont émet, l'appareil
-        bascule sans qu'elle le sache, et sa croyance devient fausse. L'adopter
-        propagerait son erreur dans HA.
+        On adopte TOUS les champs, toggles compris (le sens de rotation). En mode
+        « suivre la télécommande », c'est elle la source de vérité : ne pas
+        adopter le sens le laissait désynchronisé pour toujours.
         """
         try:
             pkt = decoder.decode_packet(b64)
@@ -323,10 +351,17 @@ class Device:
                                            crc.get("msb_first", True)):
                 return False
 
-        tog = set(profile_mod.toggles(self.p))
+        # On adopte TOUS les champs, y compris les toggles. Le sens de rotation
+        # de la trame dit ce que la TÉLÉCOMMANDE croit — et en mode « suivre la
+        # télécommande », c'est justement elle la source de vérité : elle vient
+        # d'appuyer, l'appareil a obéi. Le seul cas où sa croyance est fausse,
+        # c'est si on a nous-mêmes émis un toggle entre-temps (HA → appareil) ;
+        # mais quelqu'un qui écoute pilote depuis la télécommande, pas depuis HA.
+        # Ne PAS adopter le sens était trop prudent : il ne se synchronisait
+        # jamais, ce qui est précisément ce qu'on voulait corriger.
         heard = {f["name"]: decoder.field_value(bits, f["start"], f["end"],
                                                 f.get("msb_first", True))
-                 for f in profile_mod.data_fields(self.p) if f["name"] not in tog}
+                 for f in profile_mod.data_fields(self.p)}
         with self.lock:
             changed = {k: v for k, v in heard.items() if self.state.get(k) != v}
             if not changed:
@@ -676,59 +711,96 @@ class Listener:
         left = [d.id for f, ds in freqs.items() if f != best for d in ds]
         return best, left
 
+    # Reculs sur erreur : un RM4 injoignable ne doit pas être martelé toutes les
+    # 0,4 s — ça saturait la radio et bloquait l'UI (504). On espace, et au bout
+    # de quelques échecs on lâche la session pour la rouvrir proprement.
+    BACKOFF = (1, 2, 5, 10, 15)
+    RESET_AFTER = 3               # échecs consécutifs avant de lâcher _dev
+
+    def _sleep_for(self, fails):
+        if not fails:
+            return self.POLL
+        return self.BACKOFF[min(fails - 1, len(self.BACKOFF) - 1)]
+
     def run(self):
         left_warned = mute_warned = None
-        while not self.stop.wait(self.POLL):
-            devs = self.watched()
-            mute = [d.id for d in devs if not profile_mod.identity(d.p)]
-            if mute != mute_warned:
-                mute_warned = mute
-                if mute:
-                    log.warning("%s est suivi mais son profil ne marque aucun champ "
-                                "`identity` : impossible de reconnaître ses trames",
-                                ", ".join(mute))
-            if not devs:
-                self._armed = False           # radio libre : on n'y touche pas
-                continue
-            freq, left = self.frequency(devs)
-            if left != left_warned:
-                left_warned = left
-                if left:
-                    log.warning("écoute sur %s MHz : %s est sur une autre "
-                                "fréquence et ne sera PAS suivi", freq, ", ".join(left))
+        fails = 0
+        while not self.stop.wait(self._sleep_for(fails)):
             try:
-                with _radio:
+                devs = self.watched()
+                mute = [d.id for d in devs if not profile_mod.identity(d.p)]
+                if mute != mute_warned:
+                    mute_warned = mute
+                    if mute:
+                        log.warning("%s est suivi mais son profil ne marque aucun "
+                                    "champ `identity` : trames non reconnaissables",
+                                    ", ".join(mute))
+                if not devs:
+                    self._armed = False       # radio libre : on n'y touche pas
+                    fails = 0
+                    continue
+                freq, left = self.frequency(devs)
+                if left != left_warned:
+                    left_warned = left
+                    if left:
+                        log.warning("écoute sur %s MHz : %s est sur une autre "
+                                    "fréquence et ne sera PAS suivi", freq, ", ".join(left))
+
+                # get_device HORS du verrou radio : il a le sien, et il peut
+                # bloquer jusqu'à 18 s pour reconnecter. Le tenir sous _radio
+                # bloquerait aussi toute émission pendant ce temps.
+                try:
                     dev = get_device()
-                    if not self._armed or freq != self._freq:
-                        dev.find_rf_packet(frequency=freq)
-                        self._armed, self._freq = True, freq
-                        continue              # rien à lire au premier tour
-                    data = dev.check_data()
-            except broadlink.exceptions.StorageError:
-                continue                      # rien reçu encore : le cas normal
-            except Exception as exc:          # noqa: BLE001
-                log.info("écoute : %s", exc)
+                except Exception as exc:      # noqa: BLE001
+                    fails += 1
+                    if fails == 1 or fails == self.RESET_AFTER:
+                        log.warning("écoute : Broadlink injoignable (%s)", exc)
+                    self._armed = False
+                    continue
+
+                try:
+                    with _radio:
+                        if not self._armed or freq != self._freq:
+                            dev.find_rf_packet(frequency=freq)
+                            self._armed, self._freq = True, freq
+                            fails = 0
+                            continue          # rien à lire au premier tour
+                        data = dev.check_data()
+                        # Une capture consomme l'armement, et le RM4 Pro refuse de
+                        # se réarmer tant que la session n'est pas close : sans ce
+                        # cancel, la 1re trame passe puis plus rien. Sous le même
+                        # verrou radio, avant de relâcher.
+                        try:
+                            dev.cancel_sweep_frequency()
+                        except Exception:     # noqa: BLE001
+                            pass
+                        self._armed = False
+                except broadlink.exceptions.StorageError:
+                    fails = 0                 # rien reçu encore : le cas normal
+                    continue
+                except Exception as exc:      # noqa: BLE001
+                    fails += 1
+                    self._armed = False
+                    if fails >= self.RESET_AFTER:
+                        log.warning("écoute : %s échecs — on relâche la session RM4", fails)
+                        reset_device()        # la prochaine boucle rouvrira
+                    continue
+
+                fails = 0
+                b64 = base64.b64encode(data).decode()
+                for d in devs:
+                    if d.absorb(b64):
+                        break
+                else:
+                    log.info("trame entendue, aucun profil suivi ne la reconnaît "
+                             "(%d octets)", len(data))
+            except Exception:                 # noqa: BLE001
+                # rien, JAMAIS, ne doit tuer ce thread : il rendrait l'écoute
+                # muette sans que rien ne le dise.
+                log.exception("boucle d'écoute")
+                fails += 1
                 self._armed = False
                 continue
-
-            # Une capture consomme l'armement. Et le RM4 Pro ne se laisse PAS
-            # réarmer tant que la session d'écoute n'est pas close : sans ce
-            # cancel, la première trame passe puis plus rien (le bug « marche une
-            # fois »). Le labo et find_frequency.py cancellent déjà ; l'écoute le
-            # devait aussi.
-            try:
-                with _radio:
-                    dev.cancel_sweep_frequency()
-            except Exception:                 # noqa: BLE001
-                pass
-            self._armed = False
-            b64 = base64.b64encode(data).decode()
-            for d in devs:
-                if d.absorb(b64):
-                    break
-            else:
-                log.info("trame entendue, aucun profil suivi ne la reconnaît "
-                         "(%d octets)", len(data))
 
 
 class Bridge:
@@ -849,12 +921,9 @@ def api_status():
     ip = device_ip()
     src = ("ui" if load_config().get("device_ip")
            else "option" if DEVICE_IP_OPTION else "broadcast")
-    rm4 = {"connected": False, "error": None, "ip": ip, "ip_source": src}
-    try:
-        dev = get_device()
-        rm4.update(connected=True, model=dev.model, host=dev.host[0])
-    except Exception as exc:                  # noqa: BLE001
-        rm4["error"] = str(exc)
+    # SANS get_device() : un poll de statut ne doit pas pouvoir bloquer l'UI
+    # 18 s sur une reconnexion, sinon l'ingress renvoie 504.
+    rm4 = {"ip": ip, "ip_source": src, "error": None, **device_snapshot()}
     return jsonify(
         mqtt=b.connected, rm4=rm4, dir=PROFILE_DIR,
         devices=[{"id": d.id, "name": d.p["device"]["name"],

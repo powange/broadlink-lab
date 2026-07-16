@@ -1,5 +1,26 @@
 # Journal des modifications
 
+## 0.5.4
+
+**L'UI ne se bloque plus (504) quand l'écoute tourne, et le sens de rotation se
+synchronise.**
+
+Deux corrections signalées sur le vrai matériel :
+
+- **504 Gateway Time-out.** La page de statut déclenchait une reconnexion
+  Broadlink qui pouvait durer 18 secondes ; pendant l'écoute continue, cela
+  bloquait l'UI jusqu'au timeout de l'ingress. Le statut se lit désormais sur la
+  session déjà ouverte, sans jamais reconnecter de façon bloquante. Et la boucle
+  d'écoute recule sur erreur au lieu de marteler un appareil injoignable —
+  jusqu'à 15 s entre deux tentatives, et elle relâche la session après trois
+  échecs pour la rouvrir proprement.
+
+- **Le sens de rotation ne se synchronisait pas** depuis la télécommande. Il est
+  marqué « bascule » — le récepteur ignore la valeur — mais en mode « suivre la
+  télécommande », c'est elle la source de vérité : le bit qu'elle émet dit le
+  sens qu'elle croit, et elle vient d'appuyer. On l'adopte maintenant comme les
+  autres champs.
+
 ## 0.5.3
 
 **« Suivre la télécommande » ne se synchronisait qu'une fois.** Le premier appui

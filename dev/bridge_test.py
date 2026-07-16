@@ -488,7 +488,7 @@ def main():
         # à chaque fois, sans quoi seule la première est captée.
         before2 = seen.get("rf_bridge/flower/light/state")
         # captures[22] est à lum10 -> brut 2 -> brightness 1 côté HA : bien distinct
-        open(RF_QUEUE, "w").write(fix["captures"][22]["b64"] + "\\n")
+        open(RF_QUEUE, "w").write(fix["captures"][22]["b64"] + "\n")
         got = wait_for(lambda: open(RF_QUEUE).read().strip() == "",
                        "2e trame consommée (le réarmement marche)", 20)
         check("une DEUXIÈME trame est captée — l'écoute se réarme", got)
@@ -496,6 +496,18 @@ def main():
                        "2e état republié", 20)
         check("la 2e trame met HA à jour aussi", got,
               seen.get("rf_bridge/flower/light/state"))
+
+        # Le SENS doit se synchroniser lui aussi. C'est un toggle — le récepteur
+        # ignore la valeur et bascule — mais en écoute, le bit dit ce que la
+        # télécommande croit, et c'est elle la source de vérité. Ne pas l'adopter
+        # le laissait désynchronisé pour toujours (signalé sur le vrai matériel).
+        before_dir = seen.get("rf_bridge/flower/fan/dir/state")
+        open(RF_QUEUE, "w").write(fix["captures"][31]["b64"] + "\n")   # reverse=1
+        wait_for(lambda: open(RF_QUEUE).read().strip() == "", "trame reverse lue", 20)
+        got = wait_for(lambda: seen.get("rf_bridge/flower/fan/dir/state") == "reverse",
+                       "sens synchronisé depuis la télécommande", 20)
+        check("le sens de rotation se synchronise depuis la télécommande (toggle inclus)",
+              got, f"{before_dir} -> {seen.get('rf_bridge/flower/fan/dir/state')}")
 
         # LE point : entendre n'est pas commander. Réémettre ce qu'on vient
         # d'entendre serait au mieux inutile, au pire une boucle sans fin.
