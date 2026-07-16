@@ -115,6 +115,16 @@ sans elles, on ne peut corréler aucun champ de bits à une grandeur physique.
 **Attention aux toggles.** Un bouton « inverser le sens » ne t'annonce pas le
 résultat, il le bascule. Étiquette avec l'état **obtenu**, pas avec le bouton pressé.
 
+## Ce qu'on apprend en décodant
+
+Deux télécommandes Mantra de modèles différents (RF00234 et RF00143) partagent le
+**même checksum** — une somme complémentée avec la constante 0x55 — et la **même
+correspondance de luminosité**, alors que leurs timings, la longueur de leurs
+trames et la disposition de leurs bits n'ont rien à voir.
+
+C'est la signature d'une famille de puces. Sur la troisième télécommande de la
+marque, le piège du checksum sera résolu avant la première capture.
+
 ## Ce que ça ne fait pas
 
 - **Broadlink uniquement.** Le décodage PWM, la génération et le pont MQTT sont

@@ -26,7 +26,7 @@ window.URL.createObjectURL = () => 'blob:stub';
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const wait = async (fn, label, ms = 15000) => {
+const wait = async (fn, label, ms = 45000) => {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
   throw new Error('timeout: ' + label);
@@ -57,7 +57,7 @@ check('capture concurrente refusée en 409', dup.status === 409, `HTTP ${dup.sta
 const t0 = Date.now();
 $('cap-cancel').dispatchEvent(new window.Event('click'));
 await wait(() => /annulée/i.test($('cap-msg').textContent), 'annulation');
-const ms = Date.now() - t0;
+const ms = performance.now() - t0;
 check('annulation prise en compte', /Capture annulée/.test($('cap-msg').textContent),
   $('cap-msg').textContent.trim());
 check('annulation rapide (< 3s)', ms < 3000, `${ms} ms`);

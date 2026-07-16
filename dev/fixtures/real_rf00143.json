@@ -1,0 +1,261 @@
+{
+  "_comment": [
+    "Captures RÉELLES d'une Mantra RF00143 — un SECOND protocole, du même",
+    "fabricant que la RF00234 mais d'un autre modèle. Elles prouvent que",
+    "l'outil n'est pas taillé pour un seul appareil.",
+    "",
+    "Ce que la comparaison des deux enseigne :",
+    "  - MÊME checksum sub8 k=0x55, alors que les timings (296/985 µs contre",
+    "    263/788), la longueur (48 contre 64 bits) et la disposition des bits",
+    "    diffèrent. C'est une signature de la famille de puces Mantra.",
+    "  - MÊME correspondance de luminosité : lum10 -> 2 ... lum100 -> 11.",
+    "  - MÊME principe d'extinction : le niveau garde sa valeur, seul le bit",
+    "    d'alimentation tombe (bit 24 ici, bit 32 sur la RF00234).",
+    "",
+    "Ne pas supprimer : c'est le seul second signal réel du projet."
+  ],
+  "captures": [
+    {
+      "name": "light1_lum10_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 10,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAQAgCfBgAEAAK9BAACKgQAApgEeDp/HgkLHB4JCh0dCgocHgkeCh0JCx0dCR4KCR0KHR0KCh0KHQkdCxwKHQodHQoKHAsdHQoKHAscHgkLHAodHgkKHQocCxwKHgocCxweCQodCh0KHB4KChweCR4JHgkdCgodCwABAIGAHQkLHR0KChweCgkdHgkdCx0JCxwdCh4JCR4KHB4KCR0LHAodCh0KHQocHgoJHQscHgoJHQscHgkKHQodHQkLHQocCxwKHQodCxwdCQsdCR4KHB4KCR0eCR4KHQkdCgodCgABAYGAHQkLHB4KCR0dCgodHgkdCh4JCh0dCR4KCR4KHB0KCh0LHAocCx0KHgkcHQoKHQodHgkKHQodHQkLHAoeHQkLHAodCh0KHQocCx0dCQscCh4KHB0KChwfCR0KHQkeCgkdCwABAIKAHQkLHB0KCh0dCgocHgodCh0JCx0dCR4KCR4JHR0KCh0KHQocCxwKHQodHgkKHAsdHQoKHAsdHQkLHAodHgkKHQocCxwKHgkdCxweCAsdCR4KHB4KChweCR4KHQkdCgodCgABAYGAHQkLHB4KCR0dCgocHwkdCh0KCh0dCR4KCR4JHR0KCh0LHAodChwLHQocHgkKHQodHQoKHAscHgkLHAodHgkLHAocCx0JHgocCxwdCgodCh0KHB4KChweCR4KHQkdCgodCwAF3A=="
+    },
+    {
+      "name": "light1_lum20_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 20,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAIAgCfBgAEAAI/BG06fx4KChweCgkdHgkKHB8JHQodCgodHQkeCgkeCR0dCgodCh0JHgocCx0JHR0KCh0KHR0KChwLHB4JCxwKHR4IHgoKHAscCh4JHQscChwfCR0KChweCgkdHQoeCR4JHQoKHQoAAQGAgR0JCxweCQodHQoKHB4KHQkeCgkeHQkdCwkdCh0dCQsdCR4KHAscChwLHR0KChwLHR0JCxwKHh0JCxwKHB4KHQoKHAsdCR0LHAocCxweCh0JCxweCQodHQoeCR0KHwgKHQkAAQKAgB4JCh0eCQodHQkLHB4JHgkdCwkdHQodCQsdCR4dCQsdCR0KHQodCh0KHR0JCxwKHR4JCh0KHB4KChwLHB0LHQkLHQkcCx0JHgocCxweCR0KCh0eCQkeHQkeCh0JHgkKHgkAAQKAgB0KChweCQodHgkKHR4JHQodCgodHQodCgkeCR0dCgodCh0JHgocCxwKHR4JCh0KHR0KChwLHB4KChwLHB0KHQoKHAscCh4JHQscChweCh0KChweCgkdHgkdCx0JHQoKHQoAAQGAgR0JCxwdCQsdHQoKHB4JHgkeCQoeHQkdCgocCx0dCgocCx0JHQodCh0KHB4KCR0LHB4JCh0KHR0KCh0KHB4JHgoJHQscChwLHQkdCxwdCh4JCxwdCQsdHQodCR0LHQkLHAoABdw="
+    },
+    {
+      "name": "light1_lum30_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 30,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAWAgCfBgAEAAWJBDgEAAF2BAACgQQAA6QE9TuAHgkLHB4ICx0dCgocHgodCR4KCR4dCR0LCR0KHR0LCR0KHQocCxwKHQodHQoKHAsdHQoKHAsdHQkLHB4JCh0LHAocCx0KHAscCxwKHR4JHQoKHR0KChweCh0JHgoJHh0JCwABAICBHgkKHR0KChweCgocHgkeCh0KCR4dCR0KCh0KHR0KChwLHQkdCxwKHgkdHQoKHAsdHQoKHAscHgkLHB0KChwLHQocCx0JHgkdCxwKHR0KHQoKHR0KChwdCx0JHgkKHh0JCwABAICBHggLHR0KChweCgkdHgkeCR4JCh0eCR0KChwLHR0KCR0LHAodCh0KHQodHQoKHAsdHQoKHAscHgkKHR0KCh0KHQocCxwKHgocCxwKHB8JHQoKHB4KChweCh0JHgkKHR0KCwABAIGAHQkLHR0KChweCQodHgkdCx0JCxwdCh4JCh0KHB4KCR0LHAodCh0JHgocHgoJHQscHgoJHQodHQkLHR0KChwLHQkdCxwKHQodCh0KHB4JHgoKHB0KCh0eCR0LHQkKHR0KCgABAYGAHQkLHB0LCR0dCgocHwkdCh0KCh0dCR4KCR4JHR0KCh0KHQocCxwLHQkdHQoKHQodHQoKHAsdHQkLHB0LCR0LHAodCh0JHgocCx0JHR4JHQsJHR0KChwfCR0KHQoKHR0JCwAF3A=="
+    },
+    {
+      "name": "light1_lum40_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 40,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAGAgCfBgAEmTJ+IQcLHR0JCx0dCQscHgodCR0LCR0eCR0KChwLHR0JCh4JHgkdCh0KHAscHgoKHAscHgkKHQkeHgkKHR0JCxweCQscCh0KHQodChwLHB4JHgkLHB0KCh0dCh0JHgoJHQscCgABAYF/HwkKHR0JCx0dCQscHQsdCR0KChwfCR0KCh0KHR0JCh0KHgkdCxwKHAscHgoKHAscHgkKHQodHQkLHR0JCxwdCgodCh0KHAsdChwLHB0KHgkLHB0JCx0dCh0KHAsJHQodCgABAYF/HwkKHR0JCx0dCQscHQodCh0KChweCh0KChwLHB4JCh0KHgkdCh0JHQscHgkKHQscHgkKHQocHgoJHh0JCxwdCgodCh0KHAsdCR0LHB0KHgkLHB0JCxweCh0JHQsJHQodCgABAYCAHgkKHh0JCxweCQodHQscCh0KChweCh0KChwLHB0KCh0KHQocCx0KHAscHQkLHQkeHQkLHAodHgkKHR4JCh0dCgodCR4KHAscCh0KHR0KHQoKHR0JCxweCh0JHQsJHQodCgABAYCAHgoJHhwKCh0dCQscHgodCR4KCR4dGgwLCR0LHB0JCx0KHQocCh4JHQodHQkLHAoeHQkLHQkdCBEECwkdHgkLHB0JCx0JHgkdCxwKHQodHQodCQscHgkLHBwaDwkdCgocCx0KAAXc"
+    },
+    {
+      "name": "light1_lum50_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 50,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAKAgCfBgAEAAIzBAABBjp+HwoKHB8ICh0eCQscHgkdCh0KCh0dCh0KCh0JHR4JCh4JHQodChwLHAodHgkKHQodHQoKHAsdHQoKHB0KHgkKHQocCx0JHgocCxwKHR4JHQoKHR0KChwdCx0JCh0dCh4JCgABAYCBHQkLHB4JCxwdCQsdHQodCR0LCR0eCR0LCR0LHB0KCh0KHQocCh4JHQscHQkLHQkeHQkLHQkdHgkKHh0JHQoKHQodCR0LHAodCh0KHR0JHgoJHh0JCxweCR0KChwfCR0KCgABAYCAHQsJHR0KChwfCQkdHgkdCx0JCxwdCh4JCh0KHB4KCR0LHAoeCR0JHgocHgoJHQodHgoJHQodHQoKHR0JHgkKHgkdCxwKHAsdCR4KHB0KHgkLHB0LCR0dCh0KCh0dCR4KCQABAYF/HwkKHR0JCx0dCQscHQoeCR0LCR0dCh0JCx0JHh0JCx0JHQodCh0KHQodHQkLHAodHgkKHQodHQoKHB4JHQsJHQscChwLHQocCxwKHh0JHQoKHR4JCh0dCR4KCR0eCR0KCgABAYGAHQkLHB4KChwdCgodHgkdCR8JCR4dCR0LCR0KHR0LCR0LHAocCx0JHQodHQoKHAsdHQkLHAoeHQkLHB0KHgkKHQodCh0KHAscCh0KHR0KHQoKHR0JCxwdCx0JCxweCR0KCgAF3A=="
+    },
+    {
+      "name": "light1_lum60_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 60,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAIAgCfBgAEAASWOnkEBh4ICxweCQscHQoKHR0KHQoeCQodHQocCwkdCxwdCwkdCxwKHAsdCR4KHB4KCR0LHB4JCh0LHB0JCx0dCh0JHQsJHQscCh0KHQscChwfCB4KChweCgkdHgkdCgodHQoKHQoAAQCBgR0JCxweCQodHQoKHB8JHQodCgodHQkeCgkdCh0dCgodCh0KHAscCh4JHR0KChwLHR0KChwLHR0JCxweCh0JHQsJHQodCR4KHAsdCR0eCR0LCR0dCgocHwkdCgocHgoJHQsAAQCBgB0JCx0dCgocHgoJHR4JHQsdCQscHQodCgkeChwdCwkdCxwKHQodCR4KHB4KCR0LHB4KCR0LHB0JCx0dCh0JHQsJHQscCh4JHQscChwfCR0KChweCQodHgkdCwkdHQoKHAsAAQCBgR0JCxweCQodHQoKHB8JHQodCgodHQkeCgkdCh0dCgodCh0KHAscCh4JHR0KCh0KHR0KChwLHR0JCxweCh0JHQsJHQodCh0KHAsdCR0eCR0LCR0dCgocHgodCQscHQsJHQsAAQCBgB0JCx0dCgocHQsJHR4JHQsdCQodHQoeCQkeChwdCwkdCxwKHAsdCR4KHB0KCh0KHR0KCh0KHR0JCxweCh0JHQsJHQscCh0KHAsdChweCR0LChwdCgodHgkdCwkdHQoJHQsABdw="
+    },
+    {
+      "name": "light1_lum70_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 70,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scACAgCfBgA9fx4JCxweCQscHQoKHB8JHQodCgodHQkeCgkdCh0dCgodCh0KHAscCh4JHR0KChwLHR0KChwLHR0JHgkKHQodCxwKHAscCh4KHAscChwfCR0KCh0dCgocHgodCgkdCh0dCgoAAQGBgB0JCx0dCgocHQoKHR0KHQoeCQodHQocCwkdCxwdCgodCxwKHAsdCR4KHB0LCR0KHR0KCh0KHR0JHgoJHgkdCxwKHQodCR4KHAsdCR0dCh0KCh0dCgocHQsdCgocCh0eCQsAAQCAgR0JCx0dCQscHQsJHR0KHQoeCQkeHQkeCgocCxwdCwkdCxwKHAsdCR4KHB0KCh0KHR0KCh0KHR0JHgkKHgkdCxwKHAsdCR0LHAsdCR0dCh0KCh0dCgocHQsdCQscCh0dCgoAAQGAgR0JCx0dCQodHQoKHB4KHQkeCgkeHQkdCwkdCh0dCgodCh0KHAsdCR4JHR0KCh0KHR0KCh0KHR0JHgoJHgkdCh0KHAsdCR0KHQoeCR0dCh0KCh0dCgocHQsdCQodCh0dCgoAAQGAgR0JCxweCQodHQoKHB4KHQoeCQkeHQkdCwkdCxwdCgodCh0KHAscCh4KHB0KCh0KHR0KCh0KHR0JHgkKHgkdCh0KHAsdCR0KHQodCh0dCh0JCx0dCgocHQoeCQodCh0eCQoABdw="
+    },
+    {
+      "name": "light1_lum80_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 80,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAUAgCfBgAEPQQAAmwEAAJeBAABqwQAAUs7gB4IDBseCQscHgoJHR0KHQoeCQodHQkdCwkdCxwdCgodCh0KHQodCR0LHB0LCR0KHR0JCxwKHh0JHQoKHQodHQsJHQodChwLHAoeCR0dCh0KCh0dCgocHQsdCQscCh0KHQoAAQGAgR0JCxweCQodHQoKHB4KHQkeCgkdHgkdCwkdCh0dCQsdCR4KHAscCh0KHR0KChwLHR0JCxwKHR4JHQoKHAsdHQoKHAsdCR0LHAodCh0dCh0JCx0dCQodHQodCgodCR0LHQkAAQGBgR0JCxwdCQsdHQkLHB0KHgkdCgodHgkdCgocCx0dCQscCh4JHQodCR0LHR0KChwLHB4JCh0KHR0KHQoJHQscHQsKHAscChwLHQkdCxwdCx0JCxwdCgodHQodCgodCR0KHQoAAQGAgR4JCh0dCQsdHQkLHB0KHQodCgocHwkdCgocCx0dCQodCh0KHQodCR0LHB4KCR0LHB4JCh0KHR0JHgoJHQscHQsJHQscCh0KHQocCxwdCx0JCxwdCgodHQodCQsdCR0KHQoAAQGAgB8JCh0dCQscHgkKHR0KHQodCgocHgodCgkdCxwdCgodCh0KHQodCR0LHB0LCR0KHR0KCh0JHh0JHQsJHQscHQoKHQscChwLHQkdCh0dCh0KCh0dCQscHgodCQsdCR0KHQoABdw="
+    },
+    {
+      "name": "light1_lum90_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 90,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAAAgCfBgAeCQocHwkKHB8ICxweCR0KHgkKHR0KHQoKHQkdHgkKHgkdCxwKHQodCh0dCQsdCR0eCQoeCR0dCh0KCh0dCgocCx0KHAscCh4JHQscHQkfCQodHQkLHR0JCxwdCh4JHQoKAAEBgX8fCQodHQkLHR0JCxwdCx0JHQoKHR4JHQoKHQodHQkLHAoeCR0LHAocCx0dCgocCx0dCQscCh0eCR0KChwfCQkeChwLHAocCx0KHQocHgodCQscHgoJHR0KCh0eCR0KHQoKAAEBgIEdCQscHgkKHR0KCh0dCh0JHwkJHh0JHQsJHQscHQoKHQodChwLHAoeCR0dCgodCh0dCgocCx0dCR4JCh4dCQscChwLHQodChwLHQkdHgkdCwkdHQoKHB8JCR4dCR0LHQkLAAEAgYAdCgodHQoKHB8JCR4dCR0LHQkLHB0LHQkLHAocHgoJHgocCx0JHQodCh0eCQodChweCgkeCR0dCh4JCh0dCgodCh0KHAscCh4JHQodHQkfCQodHQkLHR0JCxwdCx0JHQsJAAEBgX8eCgocHgkKHh0JCxweCR4JHQsJHR0KHQoKHQkeHQkLHQkdCh0KHQodCh0dCQscCh4dCQscChwfCR0KChweCgkdCxwKHQodCh0KHAsdHQodCQsdHQkLHB0LCR0dCh0JHgoJAAXc"
+    },
+    {
+      "name": "light1_lum100_cct3000_fan1_v1",
+      "meta": {
+        "light": true,
+        "lum": 100,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAMAgCfBgAEAALFBAABOQRNPYAdCQscHgkLHB0KChweCh0JHQsJHR4JHQsJHQodHQkLHQkeChwLHQkdCxwdCgocCx0dCQscCh0eCR0KCh0dCh0JCx0JHgocCxwKHQscHQodCgodHQkLHB4JCxwdCx0JCh0KAAEBgIAeCgkdHgkKHR4JCh0dCR4KHQoKHB0LHQkKHQodHgkKHQocCx0JHQscCh0eCQodChwfCQkeChwdCh4JCh0dCh4JCh0KHAscCh0LHAodHQkeCgocHgoJHh0JCxwdCh4JCR4KAAEAgoAdCgocHQoKHR4JCh0dCR4KHQkLHR0JHgkKHQodHQoKHQodCR4KHAscCh0eCQodCh0dCgocCxweCR4JCh0dCh0KChwLHQkeChwLHAocHwkdCgocHgoKHB4JCh4dCR0LCR0KAAEBgIEdCQscHgkLHB0KChweCh0JHgoJHh0JHQsJHQscHQoKHQodChwLHAodCxwdCgocCx0dCQscCh4dCR0KCh0eCR0KCh0KHQkdCxwKHQodHQodCQsdHQkLHB4KCR0dCh0KCh0KAAEBgIAeCQoeHQkLHB0JCx0dDxgKHQoKHB4KHQkKHQodHQoKHQocCxwKHgkdCxwdCQsdCR4dCgodCR0eCR4JCh0dCh0KCh0KHAscCh4JHQscHQkeCgkeHQkLHR0JCxwdCx0JCxwKAAXc"
+    },
+    {
+      "name": "light0_lum100_cct3000_fan1_v1",
+      "meta": {
+        "light": false,
+        "lum": 100,
+        "cct": 3000,
+        "fan": true,
+        "speed": 1,
+        "reverse": false,
+        "mode": "normal",
+        "timer": 0
+      },
+      "b64": "scAWAgCfBgAEAAJdBAgEMQQAApAE7wQAAlUEezuAHggLHB4JCxweCQodHQodCh4JCR4dCh0KCR0LHB0LCR0LHAocCx0JHgocHQoKHQodCh0KHAsdHQkeCQodHgkdCwkdCh0KHAscCh0KHQscHQkfCR0KChwdCx0JCxwKHQodCgABAYCBHQkLHB4JCh0dCgocHgodCR4KCR4dCR0LCR0KHR0KCh0KHQocCxwKHQodHQoKHAscCh0LHAodHgkeCQocHwkdCgocCxwKHQscCh0KHAsdHQkeCR4KChwdCh4JCh0JHgodCgABAIGAHgkLHB0JCx0dCgocHQsdCR4KCR4dCR0KCh0KHR0KChwLHQkdCxwKHQocHgoKHAsdCR0KHQodHQkeCgocHgkeCgocCxwKHAsdCh0KHAscHgkeCR0LCR0dCh0KCh0KHQocCwABAIGAHgkLHB0JCxweCgocHQodCh4JCh0dCh0KChwLHB4KCR0LHAocCx0JHQscHgoJHQscChwLHQodHQkeCgkdHgkdCwkdCxwKHAscCh4KHAscHQoeCR0KCh0dCh0JCx0JHgkdCwABAICBHggLHR0JCxweCgkdHQodCh4JCR4dCR0LCR0LHB0KCh0LHAocCxwKHQscHQoKHQodChwLHAoeHQkdCgodHgkdCgodCh0KHAscCh0KHQscHQkfCR0KChwdCx0JCxwKHQodCwAF3A=="
+    }
+  ],
+  "expected": {
+    "gap": 2000,
+    "header": 177,
+    "frame_bits": 48,
+    "pwm_short_us": 296,
+    "pwm_long_us": 985,
+    "modal": {
+      "light1_lum10_cct3000_fan1_v1": "101010111011001000000100100100100000010001011110",
+      "light1_lum20_cct3000_fan1_v1": "101010111011001000000100100100110000001101011110",
+      "light1_lum30_cct3000_fan1_v1": "101010111011001000000100100101000000001101011101",
+      "light1_lum40_cct3000_fan1_v1": "101010111011001000000100100101010000001101011100",
+      "light1_lum50_cct3000_fan1_v1": "101010111011001000000100100101100000001101011011",
+      "light1_lum60_cct3000_fan1_v1": "101010111011001000000100100101110000001101011010",
+      "light1_lum70_cct3000_fan1_v1": "101010111011001000000100100110000000001101011001",
+      "light1_lum80_cct3000_fan1_v1": "101010111011001000000100100110010000001101011000",
+      "light1_lum90_cct3000_fan1_v1": "101010111011001000000100100110100000001101010111",
+      "light1_lum100_cct3000_fan1_v1": "101010111011001000000100100110110000001101010110",
+      "light0_lum100_cct3000_fan1_v1": "101010111011001000000100000110110000000111011000"
+    },
+    "agree": {
+      "light1_lum10_cct3000_fan1_v1": 5,
+      "light1_lum20_cct3000_fan1_v1": 5,
+      "light1_lum30_cct3000_fan1_v1": 5,
+      "light1_lum40_cct3000_fan1_v1": 4,
+      "light1_lum50_cct3000_fan1_v1": 5,
+      "light1_lum60_cct3000_fan1_v1": 4,
+      "light1_lum70_cct3000_fan1_v1": 5,
+      "light1_lum80_cct3000_fan1_v1": 5,
+      "light1_lum90_cct3000_fan1_v1": 4,
+      "light1_lum100_cct3000_fan1_v1": 5,
+      "light0_lum100_cct3000_fan1_v1": 5
+    },
+    "nframes": {
+      "light1_lum10_cct3000_fan1_v1": 5,
+      "light1_lum20_cct3000_fan1_v1": 5,
+      "light1_lum30_cct3000_fan1_v1": 5,
+      "light1_lum40_cct3000_fan1_v1": 5,
+      "light1_lum50_cct3000_fan1_v1": 5,
+      "light1_lum60_cct3000_fan1_v1": 5,
+      "light1_lum70_cct3000_fan1_v1": 5,
+      "light1_lum80_cct3000_fan1_v1": 5,
+      "light1_lum90_cct3000_fan1_v1": 5,
+      "light1_lum100_cct3000_fan1_v1": 5,
+      "light0_lum100_cct3000_fan1_v1": 5
+    },
+    "nframes_min": 5,
+    "checksum": {
+      "kind": "sub8",
+      "k": 85,
+      "crc_start": 40,
+      "crc_end": 48,
+      "_formula": "(0x55 - somme des octets 0..4) & 0xFF"
+    },
+    "fields": {
+      "preambule": [
+        0,
+        24
+      ],
+      "light": [
+        24,
+        25
+      ],
+      "lum": [
+        28,
+        32
+      ],
+      "cmd": [
+        37,
+        40
+      ],
+      "crc": [
+        40,
+        48
+      ]
+    },
+    "lum_map": {
+      "10": 2,
+      "20": 3,
+      "30": 4,
+      "40": 5,
+      "50": 6,
+      "60": 7,
+      "70": 8,
+      "80": 9,
+      "90": 10,
+      "100": 11
+    }
+  }
+}

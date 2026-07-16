@@ -1,5 +1,27 @@
 # Journal des modifications
 
+## 0.4.0
+
+**Déduction automatique des champs.** Bouton « Déduire les champs » : l'outil
+retrouve seul quels bits portent quel paramètre, leur ordre (MSB/LSB) et leurs
+bornes réelles — à partir des métadonnées que tu as déjà saisies.
+
+Le principe : un bit appartient à `lum` s'il est fonction de `lum` **seul** —
+même valeur, même bit, et il change quand `lum` change. Deux conséquences
+gratuites et précieuses :
+
+- **Le checksum se dénonce.** Il dépend de tous les champs à la fois, donc aucun
+  paramètre isolé ne l'explique : il ressort dans les bits « inexpliqués ».
+- **Les étiquetages fautifs sont détectés**, et l'outil nomme les deux captures
+  qui se contredisent. C'est l'erreur la plus coûteuse du reverse, et la seule
+  qu'on ne peut pas voir à l'œil.
+
+Vérifié sur les 42 captures réelles : la carte de la RF00234, établie à la main
+sur des heures, est retrouvée en une seconde — y compris l'erreur d'étiquetage
+du ventilateur qui nous avait fait perdre du temps.
+
+**L'IP du Broadlink est modifiable dans l'UI** avec annulation de la connexion.
+
 ## 0.3.0
 
 **Profil d'appareil** — le livrable. Construire, télécharger (sauvegarde, partage),

@@ -128,6 +128,10 @@
     <label style="display:inline">décodage</label>
     <select id="mode"><option value="pwm">PWM</option><option value="manchester">Manchester</option></select>
   </span>
+  <span title="Inclut l'impulsion de clôture comme dernier bit (cf. l'avertissement)">
+    <label style="display:inline">dernier bit</label>
+    <input id="tail" type="checkbox" style="width:16px;height:16px;vertical-align:middle">
+  </span>
   <button id="reload">Recharger</button>
 </div>
 <div id="ip-msg" style="margin:0 16px"></div>
@@ -157,8 +161,10 @@
       <label for="sort">trier par</label>
       <select id="sort"><option value="name">nom</option></select>
     </div>
+    <button id="suggest" title="Déduit les champs depuis les paramètres de tes captures">Déduire les champs</button>
     <div id="fields-box" style="flex:1"></div>
   </div>
+  <div id="suggest-msg"></div>
   <div id="analysis-msg"></div>
   <div id="grid-wrap"></div>
 </section>
@@ -291,6 +297,7 @@ const S = {
 
 const gap = () => parseInt($('gap').value, 10) || 2000;
 const mode = () => $('mode').value;
+const tail = () => $('tail').checked;
 
 /* Miroir JS de decoder.field_value — /api/analyze ne renvoie que les bits bruts. */
 function fieldValue(bits, start, end, msbFirst = true) {
@@ -566,7 +573,7 @@ function pollCapture() {
 /* ------------------------------------------------------------ 3. grille */
 
 async function loadAnalyze() {
-  const d = await GET(`analyze?gap=${gap()}&mode=${mode()}`);
+  const d = await GET(`analyze?gap=${gap()}&mode=${mode()}&tail=${tail() ? 1 : 0}`);
   S.rows = d.rows || [];
   S.analysis = d.analysis || { length: 0, varying: [], truncated: false };
   S.fields = d.fields || [];
@@ -725,6 +732,29 @@ function renderGrid() {
   if (dead.length) notes.push(`Décodage vide pour : ${dead.join(', ')}. Ajuste le gap ou essaie Manchester.`);
   if (!S.analysis.varying.length && S.rows.length > 1)
     notes.push('Aucune colonne ne varie : toutes les captures portent les mêmes bits.');
+
+  /* Une longueur qui n'est pas un multiple de 8 est suspecte : ces protocoles se
+     comptent en octets. Le coupable habituel est l'impulsion de clôture, qu'on
+     exclut par défaut — elle peut être une terminaison, ou le dernier bit dont
+     l'espace a fusionné avec le gap. Rien dans UNE trame ne tranche, mais la
+     durée de son mark et la longueur obtenue, si. */
+  const nbits = S.analysis.length;
+  const t = S.rows.find(r => r.tail)?.tail;
+  if (nbits && nbits % 8 !== 0 && !tail() && t) {
+    notes.push(`${nbits} bits — ce n'est pas un multiple de 8, et ces protocoles se `
+      + `comptent en octets. L'impulsion de clôture (mark ${t.mark} µs, contre `
+      + `${t.short} µs pour un mark court et ${t.long} µs pour un long) `
+      + (t.looks_like_data
+        ? `ressemble à une DONNÉE : c'est un bit à ${t.bit} que tu perds. `
+          + `Coche « dernier bit » pour obtenir ${nbits + 1} bits.`
+        : `ressemble à une terminaison. Si ${nbits + 1} bits te donne un compte rond, `
+          + `coche « dernier bit » quand même et regarde si le checksum tombe juste.`));
+  }
+  if (tail() && t) {
+    notes.push(`Dernier bit inclus : l'impulsion de clôture est lue comme un bit `
+      + `à ${t.bit} (mark ${t.mark} µs). Si le checksum ne tombe pas juste, `
+      + `décoche — c'était sans doute une terminaison.`);
+  }
   msg('analysis-msg', notes.join(' '), notes.length ? 'warn' : 'ok');
 
   const n = S.analysis.length || Math.max(0, ...S.rows.map(r => r.bits.length));
@@ -1203,12 +1233,65 @@ function show(text, filename) {
 
 $('reload').onclick = () => { refreshStatus(); loadAnalyze(); };
 $('gap').onchange = loadAnalyze;
+$('tail').onchange = loadAnalyze;
 $('mode').onchange = () => {
   if (mode() === 'manchester')
     msg('analysis-msg', 'Manchester : le diff fonctionne, mais la génération non — rebuild_frame exige les index PWM (cf. §7).', 'warn');
   loadAnalyze();
 };
 $('sort').onchange = () => { renderGrid(); renderRefs(); };
+
+/* Déduction automatique : un bit appartient à `lum` s'il est fonction de `lum`
+   SEUL — même valeur, même bit, et il change quand lum change. Le checksum échoue
+   ce test partout (il dépend de tout), donc il se dénonce. Et un paramètre que
+   rien ne suit trahit une capture mal étiquetée. */
+$('suggest').onclick = async () => {
+  $('suggest').disabled = true;
+  msg('suggest-msg', 'Analyse…', 'warn');
+  try {
+    const r = await GET(`suggest-fields?gap=${gap()}`);
+    if (!r.fields?.length && !r.problems?.length) {
+      return msg('suggest-msg', `Rien à déduire de ${r.captures} capture(s). `
+        + `Il en faut plusieurs, qui ne diffèrent que par UN paramètre.`, 'warn');
+    }
+    let html = '';
+    if (r.problems?.length) {
+      html += r.problems.map(p => `<div class="msg err" style="margin-top:6px">
+        <b>${esc(p.param)}</b> : ${esc(p.reason)}${p.conflicts.map(c =>
+          `<div class="mono" style="font-size:11px;margin-top:4px">
+             ${esc(p.param)}=${esc(c.value)} → « ${esc(c.a)} » bit=${c.a_bit}
+             &nbsp;vs&nbsp; « ${esc(c.b)} » bit=${c.b_bit}</div>`).join('')}
+        </div>`).join('');
+    }
+    if (r.fields.length) {
+      html += `<div class="msg ok" style="margin-top:6px">
+        ${r.fields.length} champ(s) déduit(s) de ${r.captures} captures :
+        ${r.fields.map(f => `<span class="pill" style="color:var(--fg)">${esc(f.name)}
+          [${f.start},${f.end}) ${f.msb_first ? 'MSB' : 'LSB'} ${f.min}-${f.max}
+          ${f.confident ? '' : '⚠'}</span>`).join('')}
+        ${r.unexplained.length ? `<div style="margin-top:6px">Bits qui varient sans
+          qu'aucun paramètre ne les explique : ${r.unexplained.map(u =>
+          `<span class="pill" style="color:var(--warn)">[${u.start},${u.end})</span>`).join('')}
+          — le <b>checksum</b> est forcément là-dedans.</div>` : ''}
+        <div class="row" style="margin-top:8px">
+          <button id="suggest-apply" class="primary">Appliquer ces champs</button>
+          <span class="dim" style="font-size:12px">remplace le nommage actuel</span>
+        </div></div>`;
+    }
+    $('suggest-msg').innerHTML = html;
+    if ($('suggest-apply')) $('suggest-apply').onclick = async () => {
+      const fields = r.fields.map(f => ({
+        name: f.name, start: f.start, end: f.end,
+        msb_first: f.msb_first, role: 'data', min: f.min, max: f.max }));
+      await SEND('fields', { fields, checksum: S.checksum });
+      await loadAnalyze();
+      msg('suggest-msg', `${fields.length} champ(s) appliqués. Nomme le checksum `
+        + `dans les bits non expliqués, puis clique « Détecter ».`, 'ok');
+    };
+  } catch (e) {
+    msg('suggest-msg', e.message, 'err');
+  } finally { $('suggest').disabled = false; }
+};
 
 refreshStatus();
 loadAnalyze().catch(e => msg('analysis-msg', e.message, 'err'));

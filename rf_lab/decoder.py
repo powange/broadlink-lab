@@ -108,18 +108,61 @@ def _split_frames(durations, gap):
     return frames
 
 
-def decode_pwm(durations, gap=2000):
+def tail_pulse(durations, idx, gap):
+    """
+    L'impulsion qui suit le dernier bit décodé — celle dont l'espace est le gap.
+
+    Deux lectures possibles, et rien dans UNE trame ne permet de trancher :
+
+      - une impulsion de TERMINAISON, qui ne porte pas de donnée. C'est le cas de
+        la RF00234 : l'exclure donne 64 bits = 8 octets, et le checksum par octets
+        le confirme.
+      - le DERNIER BIT de données, dont l'espace a fusionné avec le gap. Là,
+        l'exclure fait perdre un bit — une trame de 48 bits se lit 47.
+
+    D'où ce diagnostic : on rend la durée du mark et ce que vaudrait le bit, en
+    comparant le mark aux AUTRES marks de la trame (pas au gap, qui écrase tout).
+    C'est à l'utilisateur de trancher — la longueur de trame l'y aide : 47 bits
+    n'est ni un multiple de 8 ni de 4, 48 si.
+    """
+    if not idx:
+        return None
+    j = idx[-1] + 2
+    if j + 1 >= len(durations) or durations[j + 1] <= gap:
+        return None
+    marks = sorted(durations[i] for i in idx)
+    if not marks:
+        return None
+    lo, hi = marks[0], marks[-1]
+    mark = durations[j]
+    # plus proche du mark long ou du mark court ?
+    bit = "1" if abs(mark - hi) < abs(mark - lo) else "0"
+    return {"index": j, "mark": mark, "space": durations[j + 1],
+            "short": lo, "long": hi, "bit": bit,
+            "looks_like_data": abs(mark - hi) < abs(mark - lo)}
+
+
+def decode_pwm(durations, gap=2000, tail=False):
     """
     Décodage PWM : bit = 1 si mark > space.
-    Retourne [{bits: '0101...', idx: [i0, i1, ...]}] — idx[j] = index de la
-    durée 'mark' du bit j dans la liste durations (indispensable au rebuild).
+
+    Retourne [{bits, idx, tail}] — idx[j] = index de la durée 'mark' du bit j
+    (indispensable au rebuild).
+
+    `tail=True` inclut l'impulsion de clôture comme dernier bit, en décidant sa
+    valeur par comparaison aux autres marks. À n'activer que si la longueur de
+    trame le réclame (cf. tail_pulse).
     """
     out = []
     for idx in _split_frames(durations, gap):
         bits = "".join(
             "1" if durations[i] > durations[i + 1] else "0" for i in idx
         )
-        out.append({"bits": bits, "idx": idx})
+        t = tail_pulse(durations, idx, gap)
+        if tail and t:
+            bits += t["bit"]
+            idx = idx + [t["index"]]
+        out.append({"bits": bits, "idx": idx, "tail": t})
     return out
 
 

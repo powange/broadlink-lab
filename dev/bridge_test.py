@@ -140,8 +140,9 @@ def main():
     cli.loop_start()
 
     def wait_for(pred, label, timeout=15):
-        t0 = time.time()
-        while time.time() - t0 < timeout:
+        # horloge monotone : la murale saute (resync NTP / WSL2)
+        t0 = time.monotonic()
+        while time.monotonic() - t0 < timeout:
             if pred():
                 return True
             time.sleep(0.15)

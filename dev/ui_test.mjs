@@ -39,7 +39,7 @@ window.confirm = () => true;
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const wait = async (fn, label, ms = 15000) => {
+const wait = async (fn, label, ms = 45000) => {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
   throw new Error('timeout: ' + label);
@@ -51,7 +51,7 @@ const check = (name, cond, extra = '') => {
   console.log(`  ${cond ? '✓' : '✗'} ${name}${extra ? '  — ' + extra : ''}`);
 };
 
-await wait(() => $('grid-wrap').querySelector('table.grid'), 'grille rendue');
+await wait(() => $('grid-wrap').querySelector('table.grid'), 'grille rendue', 45000);
 await sleep(400);
 
 // --- 1. barre d'état

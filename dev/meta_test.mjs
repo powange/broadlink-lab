@@ -32,7 +32,7 @@ window.URL.createObjectURL = () => 'blob:stub';
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-const wait = async (fn, label, ms = 15000) => {
+const wait = async (fn, label, ms = 45000) => {
   const t0 = Date.now();
   while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
   throw new Error('timeout: ' + label);

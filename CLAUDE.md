@@ -461,6 +461,29 @@ fixture dans `dev/fixtures/real_rf00234.json` et vérifiées par `dev/real_test.
   trames strictement identiques → **pas de compteur anti-rejeu** (§7). Le replay
   marchera, et le dernier octet est donc calculé, pas tiré au sort.
 
+### `sub8` k=0x55 est une signature MANTRA, pas une propriété de la RF00234
+
+Une **Mantra RF00143** (autre modèle, capturée le 16/07/2026, figée dans
+`dev/fixtures/real_rf00143.json`) porte **exactement le même checksum** — alors
+que tout le reste diffère : timings `296/985 µs` contre `263/788`, trame de
+**48 bits** contre 64, disposition des bits sans rapport.
+
+Et ce n'est pas tout ce qu'elles partagent :
+
+| | RF00234 | RF00143 |
+|---|---|---|
+| checksum | `sub8` k=0x55 | **identique** |
+| luminosité | `lum10 → 2` … `lum100 → 11` | **identique** |
+| extinction | le niveau garde sa valeur, seul le bit d'alimentation tombe | **identique** |
+| bit d'alimentation | 32 | 24 |
+| octet de commande | oui, décoratif | oui, décoratif |
+
+**Conséquence pratique : sur la prochaine télécommande Mantra, essayer `sub8`
+k=0x55 en premier.** Le piège n°1 se résout avant même d'avoir capturé.
+
+Ces deux protocoles servent de garde-fou : `dev/rf00143_test.py` échoue si l'outil
+redevient spécifique à un seul appareil.
+
 ### Le checksum — trouvé
 
 ```

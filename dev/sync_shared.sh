@@ -6,6 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 for addon in rf_lab rf_bridge; do
   FILES="decoder.py profile.py"
+  [ "$addon" = "rf_lab" ] && FILES="$FILES infer.py"
   FILES="$FILES discover.py"
   for f in $FILES; do
     cp "$ROOT/shared/$f" "$ROOT/$addon/$f"

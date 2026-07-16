@@ -7,6 +7,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$HERE")"
 PORT="${PORT:-8099}"
 PY="${PY:-python3}"
+export PYTHONUNBUFFERED=1
 STORE="$HERE/.captures.test.json"
 
 [ -x "$HERE/venv/bin/python" ] && PY="$HERE/venv/bin/python"
@@ -22,7 +23,7 @@ cleanup() {
   for pid in "${SRV:-}" "${SRV2:-}" "${SRV3:-}" "${SRV4:-}"; do
     [ -n "$pid" ] && kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
   done
-  rm -f "$STORE" "$CANCEL_STORE" "$META_STORE" "$REAL_STORE"
+  rm -f "$STORE" "$CANCEL_STORE" "$META_STORE" "$REAL_STORE" /tmp/.ct.json
   rm -rf "$HERE/.profiles" "$HERE/.bridge_state" "$HERE/.nobroker_profiles" "$HERE/.nobroker_state"
 }
 trap cleanup EXIT
@@ -59,11 +60,23 @@ echo "=== 3. signal RÉEL (captures RF00234 via RM4 Pro) ==="
 "$PY" "$HERE/real_test.py"
 
 echo
-echo "=== 4. protocole synthétique ==="
+echo "=== 4. SECOND protocole réel : Mantra RF00143 (l'outil est-il générique ?) ==="
+"$PY" "$HERE/rf00143_test.py"
+
+echo
+echo "=== 5. déduction automatique des champs (sur vrai signal) ==="
+"$PY" "$HERE/infer_test.py"
+
+echo
+echo "=== 6. annulation de connexion : la latence, en environnement maîtrisé ==="
+"$PY" "$HERE/cancel_timing_test.py"
+
+echo
+echo "=== 7. protocole synthétique ==="
 "$PY" "$HERE/protocol.py"
 
 echo
-echo "=== 5. serveur local (faux RM4) ==="
+echo "=== 8. serveur local (faux RM4) ==="
 rm -f "$STORE"
 "$PY" "$HERE/serve.py" --port "$PORT" --store "$STORE" > "$HERE/.serve.log" 2>&1 &
 SRV=$!
@@ -83,7 +96,7 @@ echo "  ✓ instance « personne n'appuie » sur :$CANCEL_PORT"
 # FAKE_HELLO_DELAY : une mauvaise IP doit durer, sinon l'annulation de connexion
 # n'est pas testable (device_test.mjs). N'affecte que les IP inconnues.
 rm -f "$META_STORE"
-FAKE_HELLO_DELAY=2 "$PY" "$HERE/serve.py" --port "$META_PORT" --no-seed \
+FAKE_HELLO_DELAY=0.5 "$PY" "$HERE/serve.py" --port "$META_PORT" --no-seed \
   --store "$META_STORE" > "$HERE/.serve3.log" 2>&1 &
 SRV3=$!
 wait_up "$META_PORT" "$SRV3"
@@ -104,27 +117,27 @@ if [ ! -d "$HERE/node_modules" ]; then
 fi
 
 echo
-echo "=== 6. IP du Broadlink configurable depuis l'UI ==="
+echo "=== 9. IP du Broadlink configurable depuis l'UI ==="
 node "$HERE/device_test.mjs" "http://127.0.0.1:$META_PORT/"
 
 echo
-echo "=== 7. UI de bout en bout ==="
+echo "=== 10. UI de bout en bout ==="
 node "$HERE/ui_test.mjs" "http://127.0.0.1:$PORT/"
 
 echo
-echo "=== 8. annulation de capture ==="
+echo "=== 11. annulation de capture ==="
 node "$HERE/cancel_test.mjs" "http://127.0.0.1:$CANCEL_PORT/"
 
 echo
-echo "=== 9. paramètres d'état configurables ==="
+echo "=== 12. paramètres d'état configurables ==="
 node "$HERE/meta_test.mjs" "http://127.0.0.1:$META_PORT/"
 
 echo
-echo "=== 10. profil d'appareil (sur vrai signal) ==="
+echo "=== 13. profil d'appareil (sur vrai signal) ==="
 node "$HERE/profile_test.mjs" "http://127.0.0.1:$REAL_PORT/"
 
 echo
-echo "=== 11. RF Bridge : MQTT discovery + commandes -> trames ==="
+echo "=== 14. RF Bridge : MQTT discovery + commandes -> trames ==="
 "$PY" "$HERE/bridge_test.py"
 
 echo

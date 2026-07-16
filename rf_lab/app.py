@@ -20,6 +20,7 @@ from flask import Flask, jsonify, request, send_from_directory
 
 import decoder
 import discover
+import infer
 import profile as profile_mod
 
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "info").upper()
@@ -171,8 +172,11 @@ def capture_worker(timeout=30):
         _capture = {"state": "listening", "message": f"Appuie sur la touche ({FREQUENCY} MHz)…", "result": None}
         dev.find_rf_packet(frequency=FREQUENCY)
 
-        deadline = time.time() + timeout
-        while time.time() < deadline:
+        # time.monotonic, pas time.time : l'horloge murale SAUTE. Une
+        # resynchronisation NTP pendant une capture la couperait net, ou la
+        # ferait durer indéfiniment. Observé sous WSL2 : un écart de -26 s.
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if _cancel.is_set():
                 _leave_learning(dev)
                 _capture = {"state": "cancelled", "message": "Capture annulée",
@@ -258,21 +262,24 @@ def del_capture(cid):
 def api_analyze():
     gap = int(request.args.get("gap", 2000))
     mode = request.args.get("mode", "pwm")
+    tail = request.args.get("tail") in ("1", "true")
     store = load_store()
 
     rows, bitmap = [], {}
     for c in store["captures"]:
         pkt = decoder.decode_packet(c["b64"])
-        frames = (decoder.decode_pwm(pkt["durations"], gap) if mode == "pwm"
+        frames = (decoder.decode_pwm(pkt["durations"], gap, tail) if mode == "pwm"
                   else decoder.decode_manchester(pkt["durations"], gap))
         # trame majoritaire, pas frames[0] : la 1re répétition porte le bruit de
         # capture et fausserait l'alignement du diff (cf. decoder.pick_frame)
         bits = decoder.pick_frame(frames)
         agree = sum(1 for f in frames if f["bits"] == bits)
         bitmap[c["name"]] = bits
+        t = frames[0].get("tail") if frames else None
         rows.append({
             "id": c["id"], "name": c["name"], "meta": c["meta"],
             "bits": bits, "nframes": len(frames), "agree": agree,
+            "tail": t,
             "ndur": len(pkt["durations"]),
             "durations": pkt["durations"][:80],
             "header": pkt["header"],
@@ -282,6 +289,7 @@ def api_analyze():
                    analysis=decoder.analyze({k: v for k, v in bitmap.items() if v}),
                    fields=store.get("fields", []),
                    checksum=store.get("checksum", {"kind": "none"}),
+                   tail=tail,
                    meta_schema=store.get("meta_schema", DEFAULT_META_SCHEMA))
 
 
@@ -315,6 +323,29 @@ def set_meta_schema():
     store["meta_schema"] = schema
     save_store(store)
     return jsonify(ok=True)
+
+
+@app.get("/api/suggest-fields")
+def api_suggest_fields():
+    """
+    Déduit la carte des champs depuis les captures et leurs métadonnées.
+
+    C'est le travail qu'on fait à l'œil dans la grille, mais sans se fatiguer.
+    Bonus décisif : les bits qui varient sans qu'aucun paramètre ne les explique
+    sont signalés — le checksum est forcément là, puisqu'il dépend de tous les
+    champs à la fois. Et un paramètre dont aucun bit ne suit trahit une capture
+    mal étiquetée, l'erreur la plus coûteuse et la plus invisible du reverse.
+    """
+    gap = int(request.args.get("gap", 2000))
+    store = load_store()
+    rows = []
+    for c in store["captures"]:
+        pkt = decoder.decode_packet(c["b64"])
+        bits = decoder.pick_frame(decoder.decode_pwm(pkt["durations"], gap))
+        if bits:
+            rows.append({"name": c["name"], "bits": bits, "meta": c.get("meta", {})})
+    keys = [f["key"] for f in store.get("meta_schema", [])]
+    return jsonify(infer.suggest(rows, keys))
 
 
 @app.get("/api/detect-checksum")

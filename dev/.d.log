@@ -1,0 +1,52 @@
+→ faux RM4 (aucun matériel, aucun réseau) @ 192.168.0.99
+→ store  dev/.captures.dbg.json
+→ UI     http://127.0.0.1:8341/
+
+ * Serving Flask app 'app'
+ * Debug mode: off
+2026-07-16 01:29:29,355 INFO werkzeug [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on http://127.0.0.1:8341
+2026-07-16 01:29:29,355 INFO werkzeug [33mPress CTRL+C to quit[0m
+2026-07-16 01:29:35,381 INFO rflab Découverte broadcast (essai 1)…
+2026-07-16 01:29:35,382 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:29:35] "GET /api/analyze?gap=2000&mode=pwm&tail=0 HTTP/1.1" 200 -
+2026-07-16 01:29:35,483 INFO fake-rm4 faux RM4 appairé @ 192.168.0.99
+2026-07-16 01:29:35,483 INFO rflab Appairé : RM4 Pro (simulé) @ 192.168.0.99
+2026-07-16 01:29:35,483 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:29:35] "GET /api/status HTTP/1.1" 200 -
+2026-07-16 01:29:35,535 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:29:35] "GET /api/status HTTP/1.1" 200 -
+2026-07-16 01:29:35,547 INFO rflab Connexion à 192.168.0.254 (essai 1)
+2026-07-16 01:30:06,473 INFO rflab essai 1 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:06,473 INFO rflab Connexion à 192.168.0.254 (essai 2)
+2026-07-16 01:29:39,550 INFO rflab essai 2 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:29:39,550 INFO rflab Connexion à 192.168.0.254 (essai 3)
+2026-07-16 01:29:41,551 INFO rflab essai 3 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:29:41,551 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:29:41] "POST /api/device HTTP/1.1" 200 -
+2026-07-16 01:30:45,503 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:30:45] "GET /api/analyze?gap=2000&mode=pwm&tail=0 HTTP/1.1" 200 -
+2026-07-16 01:30:45,504 INFO rflab Connexion à 192.168.0.254 (essai 1)
+2026-07-16 01:31:16,426 INFO rflab Connexion à 192.168.0.254 (essai 1)
+2026-07-16 01:31:16,426 INFO rflab essai 1 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:31:16,426 INFO rflab Connexion à 192.168.0.254 (essai 2)
+2026-07-16 01:30:49,518 INFO rflab essai 1 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:49,518 INFO rflab Connexion à 192.168.0.254 (essai 2)
+2026-07-16 01:30:49,518 INFO rflab essai 2 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:49,518 INFO rflab Connexion à 192.168.0.254 (essai 3)
+2026-07-16 01:30:51,518 INFO rflab essai 2 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:51,518 INFO rflab Connexion à 192.168.0.254 (essai 3)
+2026-07-16 01:30:51,518 INFO rflab essai 3 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:51,519 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:30:51] "GET /api/status HTTP/1.1" 200 -
+2026-07-16 01:30:53,504 INFO rflab essai 3 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:30:53,505 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:30:53] "POST /api/device HTTP/1.1" 200 -
+2026-07-16 01:31:30,766 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:31:30] "GET /api/analyze?gap=2000&mode=pwm&tail=0 HTTP/1.1" 200 -
+2026-07-16 01:31:30,766 INFO rflab Connexion à 192.168.0.254 (essai 1)
+2026-07-16 01:32:01,663 INFO rflab essai 1 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:32:01,663 INFO rflab Connexion à 192.168.0.254 (essai 2)
+2026-07-16 01:31:34,755 INFO rflab essai 2 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:31:34,755 INFO rflab Connexion à 192.168.0.254 (essai 3)
+2026-07-16 01:31:36,756 INFO rflab essai 3 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:31:36,757 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:31:36] "GET /api/status HTTP/1.1" 200 -
+2026-07-16 01:32:03,301 INFO rflab Connexion à 192.168.0.254 (essai 1)
+2026-07-16 01:32:05,302 INFO rflab essai 1 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:32:05,302 INFO rflab Connexion à 192.168.0.254 (essai 2)
+2026-07-16 01:32:07,302 INFO rflab essai 2 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:32:07,302 INFO rflab Connexion à 192.168.0.254 (essai 3)
+2026-07-16 01:32:09,276 INFO rflab essai 3 échoué ([Errno -4000] Network timeout: No response received within 6.0s) — l'appareil dort peut-être
+2026-07-16 01:32:09,276 INFO werkzeug 127.0.0.1 - - [16/Jul/2026 01:32:09] "GET /api/status HTTP/1.1" 200 -
