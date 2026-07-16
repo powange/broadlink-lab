@@ -20,6 +20,46 @@ tous les champs à la fois, donc aucun paramètre pris isolément ne l'explique.
 bits qui varient sans être expliqués sont donc les candidats CRC — et c'est le
 piège n°1 du projet.
 
+QUAND UN PARAMÈTRE N'EST EXPLIQUÉ PAR AUCUN BIT
+
+Trois causes, qui appellent des gestes opposés — d'où l'importance de ne pas
+sauter à la conclusion « c'est mal étiqueté » :
+
+  - un CHAMP PARTAGÉ. Deux paramètres se partagent une tranche, et aucun ne
+    l'explique seul. Vu en vrai sur une Mantra RF00143 : le ventilateur n'y a pas
+    de bit d'alimentation, « éteint » s'y écrit « vitesse 0 ».
+  - un ÉTIQUETAGE FAUTIF. Vu en vrai sur la RF00234 : deux captures dites `fan1`
+    alors que le ventilo était à l'arrêt.
+  - le paramètre est ABSENT de la trame.
+
+ET ON NE PEUT PAS LES DÉPARTAGER PAR CORRÉLATION
+
+Une version de ce fichier cherchait le champ partagé en testant les COUPLES de
+paramètres. Vérifié sur les deux protocoles réels, ça se trompe dans les deux
+sens : sur la RF00234, le couple (fan, lum) « explique » le bit 40 exactement
+comme un champ partagé — alors que `lum` n'y est pour rien, la série de
+luminosité ayant simplement été capturée ventilo à l'arrêt. Les deux situations
+ont la MÊME signature formelle. En tolérant quelques exceptions pour rattraper le
+cas RF00143, ça allait jusqu'à présenter deux bits du timer comme un champ
+partagé avec `lum`.
+
+D'où le choix inverse : ne pas deviner, et rendre à la place la preuve la plus
+solide qui soit — `isolated_pairs`, deux captures qui ne diffèrent QUE par le
+paramètre en cause. Aucune heuristique, et c'est exactement « ne fais varier
+qu'un seul paramètre à la fois », la méthode du projet. Sur les deux protocoles,
+elle désigne les bons bits du premier coup.
+
+CE QUI N'EST PAS UNE PREUVE
+
+« Deux captures de même `fan` portent des bits différents » ne prouve rien : sur
+un bit de checksum ou de commande, c'est vrai de n'importe quel paramètre et de
+n'importe quelle paire de captures, puisque ces bits dépendent de tout. Une
+version antérieure accusait l'utilisateur sur cette base.
+
+Même les captures aux métadonnées RIGOUREUSEMENT identiques peuvent légitimement
+différer : sur la RF00234, les bits 26-31 décrivent le bouton pressé, pas l'état
+obtenu. `contradictions` les signale sans trancher.
+
 CE QUE ÇA NE PEUT PAS FAIRE
 
 Si deux paramètres ne varient jamais indépendamment dans le jeu de captures, rien
@@ -112,28 +152,120 @@ def _orientation(rows, key, start, end):
     return True, {k: obs[k][0] for k in ordered}, False
 
 
-def conflicts(rows, key, i, limit=2):
+def isolated_pairs(rows, keys, key, limit=3):
     """
-    Deux captures de même valeur de `key` mais de bit différent : la preuve que
-    `key` n'explique pas ce bit. Presque toujours un étiquetage faux — et c'est
-    l'information la plus utile qu'on puisse rendre, parce qu'elle est invisible
-    à l'œil.
+    Deux captures qui ne diffèrent QUE par `key`. Les bits qui changent entre
+    elles sont, forcément, ceux que `key` touche.
+
+    C'est la preuve la plus solide qu'on puisse produire, et elle ne repose sur
+    aucune heuristique : c'est « ne fais varier qu'un seul paramètre à la fois »,
+    la méthode même du projet, appliquée par la machine.
+
+    Y figurent aussi le checksum et l'octet de commande — ils changent dès que
+    quoi que ce soit change. Le dire, plutôt que de tenter de les retrancher :
+    à ce stade on ne sait pas encore où ils sont.
     """
-    by = {}
     out = []
+    others = [k for k in keys if k != key]
+    for n, a in enumerate(rows):
+        for b in rows[n + 1:]:
+            if a["meta"].get(key) == b["meta"].get(key):
+                continue
+            if any(a["meta"].get(k) != b["meta"].get(k) for k in others):
+                continue
+            d = [i for i in range(min(len(a["bits"]), len(b["bits"])))
+                 if a["bits"][i] != b["bits"][i]]
+            out.append({"a": a["name"], "b": b["name"], "bits": d})
+            if len(out) >= limit:
+                return out
+    return out
+
+
+def near_miss(rows, key, i):
+    """
+    Combien de captures faudrait-il ré-étiqueter pour que le bit `i` devienne une
+    fonction de `key` ? Et lesquelles ?
+
+    C'est la seule façon HONNÊTE de désigner un étiquetage douteux. Chercher deux
+    captures de même `key` aux bits différents n'en est pas une : sur un bit de
+    checksum ou de commande, ça réussit pour n'importe quel paramètre et n'importe
+    quelle paire de captures, donc ça ne prouve rien.
+
+    C'est un INDICE, pas un verdict : un étiquetage fautif et un champ partagé
+    produisent tous deux des exceptions ici. D'où le ton du message.
+    """
+    groups = {}
     for r in rows:
         v = r["meta"].get(key)
         if v is None:
             continue
-        k = _key(v)
-        if k in by and by[k][1] != r["bits"][i]:
-            out.append({"value": k, "a": by[k][0], "a_bit": by[k][1],
-                        "b": r["name"], "b_bit": r["bits"][i]})
+        groups.setdefault(_key(v), []).append(r)
+
+    outliers, majority = [], {}
+    for v, rs in groups.items():
+        counts = {}
+        for r in rs:
+            counts.setdefault(r["bits"][i], []).append(r)
+        best = max(counts.values(), key=len)
+        majority[v] = best[0]["bits"][i]
+        for lst in counts.values():
+            if lst is not best:
+                outliers.extend(lst)
+    # sans information, le bit ne distingue rien : ce n'est pas un candidat
+    if len(set(majority.values())) < 2:
+        return None
+    return {"bit": i, "outliers": outliers, "mapping": majority}
+
+
+def contradictions(rows, keys, limit=3):
+    """
+    Deux captures aux métadonnées RIGOUREUSEMENT identiques, mais aux bits
+    différents.
+
+    Attention : ce n'est PAS une preuve d'étiquetage fautif. Sur la RF00234, des
+    captures d'état identique diffèrent aux bits 26-31 — ces bits décrivent le
+    BOUTON pressé, pas l'état obtenu, et le récepteur les ignore. Le doute est
+    donc réel, et c'est à l'humain de trancher.
+    """
+    seen, out = {}, []
+    for r in rows:
+        k = tuple(_key(r["meta"].get(x)) for x in keys)
+        if k in seen and seen[k]["bits"] != r["bits"]:
+            d = [i for i in range(min(len(r["bits"]), len(seen[k]["bits"])))
+                 if seen[k]["bits"][i] != r["bits"][i]]
+            out.append({"a": seen[k]["name"], "b": r["name"], "bits": d})
             if len(out) >= limit:
                 return out
-        else:
-            by.setdefault(k, (r["name"], r["bits"][i]))
+        seen.setdefault(k, r)
     return out
+
+
+def _isolated_clue(key, pairs):
+    bits = sorted({i for p in pairs for i in p["bits"]})
+    return {
+        "kind": "isolated",
+        "text": ("CONTRÔLE — « {a} » et « {b} » ne diffèrent QUE par « {k} ». Les bits "
+                 "qui changent : {bits}. « {k} » est forcément parmi eux. Le checksum "
+                 "et l'octet de commande y sont aussi (ils changent dès que quoi que "
+                 "ce soit change) : écarte-les à l'œil dans la grille, il reste la "
+                 "place de « {k} »."
+                 ).format(k=key, a=pairs[0]["a"], b=pairs[0]["b"],
+                          bits=", ".join(str(b) for b in bits)),
+        "pairs": pairs,
+    }
+
+
+def _suspect_clue(key, best, total):
+    bad = len(best["outliers"])
+    return {
+        "kind": "mislabel",
+        "text": ("ÉTIQUETAGE — le bit {i} suit « {k} » pour {ok} captures sur {tot}. "
+                 "Si les {n} qui le contredisent étaient mal étiquetées, tout "
+                 "s'expliquerait. À vérifier, sans présumer : ce sont des candidates, "
+                 "pas des coupables."
+                 ).format(i=best["bit"], k=key, n=bad, tot=total, ok=total - bad),
+        "suspects": [r["name"] for r in best["outliers"]],
+    }
 
 
 def suggest(rows, keys, min_values=2):
@@ -189,20 +321,43 @@ def suggest(rows, keys, min_values=2):
     orphans = [i for i in varying if i not in seen]
     unexplained = _runs(orphans)
 
-    # Un paramètre qui bouge mais dont AUCUN bit n'est fonction : soit il n'est
-    # pas dans la trame, soit — bien plus souvent — une capture est mal étiquetée.
-    # C'est l'erreur la plus coûteuse du reverse, et la plus invisible à l'œil.
+    # Un paramètre qui bouge mais dont aucun bit n'est fonction. Trois causes
+    # possibles, et il faut les distinguer plutôt que d'accuser l'étiquetage :
+    # elles appellent des gestes opposés.
     problems = []
     for key in keys:
         vals = {_key(r["meta"][key]) for r in rows if r["meta"].get(key) is not None}
         if len(vals) < 2 or any(f["name"] == key for f in fields):
             continue
-        ex = next((c for i in orphans for c in [conflicts(rows, key, i)] if c), None)
+
+        # 1. LA preuve : deux captures qui ne diffèrent que par `key`.
+        pairs = isolated_pairs(rows, keys, key)
+
+        # 2. l'indice : le bit qui expliquerait `key` si quelques captures étaient
+        #    ré-étiquetées. Ce sont elles les candidates — pas un bit au hasard.
+        cands = [c for c in (near_miss(rows, key, i) for i in varying) if c]
+        best = min(cands, key=lambda c: (len(c["outliers"]), c["bit"]), default=None)
+
+        # Le contrôle d'abord : c'est une preuve, pas une conjecture. L'indice
+        # ensuite, et il reste un indice — un étiquetage fautif et un champ
+        # partagé le produisent tous les deux.
+        clues = []
+        if pairs:
+            clues.append(_isolated_clue(key, pairs))
+        if best:
+            clues.append(_suspect_clue(key, best, len(rows)))
+
         problems.append({
             "param": key, "distinct_values": len(vals),
-            "conflicts": ex or [],
-            "reason": ("deux captures de même « %s » portent des bits différents : "
-                       "l'une des deux est mal étiquetée" % key) if ex else
+            "isolated": pairs,
+            "suspects": [r["name"] for r in best["outliers"]] if best else [],
+            "near_bit": best["bit"] if best else None,
+            "clues": clues,
+            "reason": ("« %s » varie, mais aucun bit n'est fonction de « %s » seul. "
+                       "Ça n'accuse pas ton étiquetage : un champ partagé avec un "
+                       "autre paramètre (« éteint » écrit « niveau 0 ») donne la même "
+                       "chose. Les indices :" % (key, key))
+                      if clues else
                       ("« %s » varie mais aucun bit ne le suit : absent de la trame ?" % key),
         })
 
@@ -210,6 +365,7 @@ def suggest(rows, keys, min_values=2):
         "fields": sorted(fields, key=lambda f: f["start"]),
         "unexplained": [{"start": a, "end": b} for a, b in unexplained],
         "problems": problems,
+        "contradictions": contradictions(rows, keys),
         "varying": varying,
         "captures": len(rows),
         "frame_bits": n,

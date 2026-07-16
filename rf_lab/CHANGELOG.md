@@ -1,5 +1,27 @@
 # Journal des modifications
 
+## 0.4.2
+
+**« Déduire les champs » n'accuse plus ton étiquetage à tort.**
+
+Quand aucun bit n'était fonction d'un paramètre, l'outil concluait « l'une des
+deux captures est mal étiquetée » et exhibait deux captures aux bits différents.
+Cette preuve n'en était pas une : elle piochait parmi les bits inexpliqués, où
+vivent le checksum et le code de commande — ceux-là diffèrent entre deux captures
+quelconques, par construction. Il « prouvait » donc n'importe quoi.
+
+Et la conclusion elle-même était fausse une fois sur deux. Un paramètre
+inexpliqué a deux causes indiscernables : un étiquetage fautif, ou un **champ
+partagé** — sur certaines télécommandes, « ventilateur éteint » s'écrit
+« vitesse 0 », sans bit d'alimentation dédié. Les deux ont la même signature.
+
+À la place, l'outil rend la preuve la plus solide qui soit, et sans aucune
+heuristique : **deux captures qui ne diffèrent QUE par ce paramètre**. Les bits
+qui changent entre elles sont forcément les siens. C'est « ne fais varier qu'un
+seul paramètre à la fois » appliqué par la machine. S'y ajoute le bit qui
+suivrait le paramètre si quelques captures étaient ré-étiquetées — présenté comme
+une piste, pas un verdict.
+
 ## 0.4.1
 
 **Tri par ordre de capture.** La grille se triait par nom ou par paramètre

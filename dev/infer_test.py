@@ -64,15 +64,42 @@ cmd = [u for u in r["unexplained"] if u["start"] < 32]
 check("l'octet de commande est signalé inexpliqué (il suit le bouton, pas l'état)",
       cmd and cmd[0]["end"] <= 32, cmd)
 
-# Et surtout : il trouve NOS erreurs d'étiquetage. `fan` était faux sur les
-# premières captures — le ventilo était à l'arrêt malgré l'étiquette fan1.
+# `fan` n'est expliqué par aucun bit seul : ici c'est un VRAI étiquetage fautif
+# (le ventilo était à l'arrêt malgré l'étiquette fan1). Mais l'outil ne doit pas
+# le décréter — le même symptôme vient d'un champ partagé sur la RF00143.
 prob = {p["param"]: p for p in r["problems"]}
-check("l'étiquetage fautif de `fan` est détecté", "fan" in prob,
+check("`fan` est signalé comme inexpliqué", "fan" in prob,
       list(prob) or "aucun problème signalé")
 if "fan" in prob:
-    check("il nomme les deux captures qui se contredisent",
-          len(prob["fan"]["conflicts"]) >= 1,
-          prob["fan"]["conflicts"][0] if prob["fan"]["conflicts"] else None)
+    p = prob["fan"]
+    check("le message n'accuse pas l'étiquetage",
+          "mal étiquetée" not in p["reason"] and "champ partagé" in p["reason"],
+          p["reason"][:70])
+
+    # LA preuve : deux captures qui ne diffèrent QUE par `fan`. Aucune
+    # heuristique — et le bit 40 (l'alimentation du ventilo, §10) est dedans.
+    check("le contrôle « ne varie qu'un paramètre » est proposé", p["isolated"],
+          len(p["isolated"]))
+    check("et il isole le bit 40, l'alimentation du ventilo",
+          p["isolated"] and 40 in p["isolated"][0]["bits"],
+          p["isolated"][0]["bits"] if p["isolated"] else None)
+
+    # L'indice, lui, nomme les VRAIES fautives — mais comme candidates.
+    check("le bit 40 est aussi le meilleur candidat", p["near_bit"] == 40, p["near_bit"])
+    check("il nomme les 2 captures réellement mal étiquetées",
+          sorted(p["suspects"]) == ["light0_lum10_cct3000_fan1_v1",
+                                    "light1_lum10_cct3000_fan1_v1"], p["suspects"])
+
+# Le contre-test : une corrélation accidentelle ne doit PAS passer pour une
+# preuve. Une version antérieure « prouvait » l'étiquetage fautif en exhibant
+# deux captures de même `fan` aux bits différents — vrai de n'importe quelle
+# paire sur un bit de checksum, donc sans valeur.
+crc_bit = 60
+same_fan = [(a, b) for a in rows for b in rows
+            if a["meta"]["fan"] == b["meta"]["fan"]
+            and a["bits"][crc_bit] != b["bits"][crc_bit]]
+check("le checksum « contredit » n'importe quel paramètre — ce n'est pas une preuve",
+      len(same_fan) > 0, f"{len(same_fan)} paires de même `fan` diffèrent au bit {crc_bit}")
 
 # Aucun champ ne doit empiéter sur le préambule : il ne varie jamais.
 check("aucun champ déduit sous le bit 26 (le préambule ne varie pas)",

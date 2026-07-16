@@ -1267,12 +1267,16 @@ $('suggest').onclick = async () => {
         + `Il en faut plusieurs, qui ne diffèrent que par UN paramètre.`, 'warn');
     }
     let html = '';
+    // `warn` et pas `err` : ce n'est pas une erreur, et surtout ce n'est pas une
+    // faute de l'utilisateur. Un champ partagé entre deux paramètres produit
+    // exactement le même symptôme qu'un étiquetage fautif.
     if (r.problems?.length) {
-      html += r.problems.map(p => `<div class="msg err" style="margin-top:6px">
-        <b>${esc(p.param)}</b> : ${esc(p.reason)}${p.conflicts.map(c =>
-          `<div class="mono" style="font-size:11px;margin-top:4px">
-             ${esc(p.param)}=${esc(c.value)} → « ${esc(c.a)} » bit=${c.a_bit}
-             &nbsp;vs&nbsp; « ${esc(c.b)} » bit=${c.b_bit}</div>`).join('')}
+      html += r.problems.map(p => `<div class="msg warn" style="margin-top:6px">
+        <b>${esc(p.param)}</b> : ${esc(p.reason)}
+        ${(p.clues || []).map(c => `<div style="margin-top:6px">${esc(c.text)}
+          ${(c.suspects || []).map(s =>
+            `<div class="mono" style="font-size:11px">· ${esc(s)}</div>`).join('')}
+          </div>`).join('')}
         </div>`).join('');
     }
     if (r.fields.length) {
