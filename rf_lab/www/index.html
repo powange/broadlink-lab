@@ -1190,8 +1190,11 @@ function deriveEntities() {
                                    kelvin: [3000, 5000] };
     ents.push(e);
   }
-  if (f('fan')) {
-    const e = { type: 'fan', id: 'fan', name: 'Ventilateur', power: 'fan' };
+  // `fan` (bit d'alimentation) est optionnel : certaines télécommandes n'en ont
+  // pas et écrivent « éteint » en « vitesse 0 ». Un champ `speed` suffit donc.
+  if (f('fan') || f('speed')) {
+    const e = { type: 'fan', id: 'fan', name: 'Ventilateur' };
+    if (f('fan')) e.power = 'fan';
     if (f('speed')) e.percentage = { field: 'speed', min: minOf(f('speed')), max: maxOf(f('speed')) };
     if (f('reverse')) e.direction = 'reverse';
     if (f('mode')) e.preset = { field: 'mode', options: ['normal', 'nuit', 'eco'] };

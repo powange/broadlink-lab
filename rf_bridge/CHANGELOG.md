@@ -1,5 +1,13 @@
 # Journal des modifications
 
+## 0.5.1
+
+**Un ventilateur sans bit d'alimentation est enfin importable.** La validation
+exigeait un champ `power` sur toute entité `fan`. Or certaines télécommandes n'en
+ont pas — la Mantra R00143 écrit « éteint » en « vitesse 0 ». Leur profil était
+refusé à l'import avec « fan.power : il faut au moins {field} », alors qu'il était
+correct. `power` est désormais optionnel : sans lui, la vitesse 0 vaut extinction.
+
 ## 0.5.0
 
 **« Suivre la télécommande » — l'état de Home Assistant peut cesser de mentir.**

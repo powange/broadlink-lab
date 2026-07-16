@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## 0.5.2
+
+**Le labo produit une entité ventilateur même sans bit d'alimentation.** Il
+n'ajoutait un ventilateur que s'il trouvait un champ `fan`. Une télécommande dont
+« éteint » s'écrit « vitesse 0 » (Mantra R00143) n'a pas ce champ : son
+ventilateur était absent du profil. Un champ `speed` suffit maintenant.
+
 ## 0.5.1
 
 **Marquer ce qui identifie la télécommande.** Une case « identifie » sur les

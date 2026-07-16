@@ -249,8 +249,19 @@ def validate(profile):
                 errs.append(f"type d'entité inconnu : {t}")
                 continue
             try:
-                if t in ("light", "fan", "switch"):
+                if t in ("light", "switch"):
                     _check_ref(e.get("power"), fields, f"{t}.power")
+                if t == "fan":
+                    # `power` est OPTIONNEL sur un ventilateur : certaines
+                    # télécommandes n'ont pas de bit d'alimentation, et « éteint »
+                    # s'y écrit « vitesse 0 » (Mantra R00143). Exiger un champ qui
+                    # n'existe pas rendait ces appareils impossibles à modéliser.
+                    if e.get("power"):
+                        _check_ref(e["power"], fields, "fan.power")
+                    elif not e.get("percentage"):
+                        errs.append("fan : sans « power », il faut au moins "
+                                    "« percentage » — c'est la vitesse 0 qui vaut "
+                                    "alors extinction")
                 if t == "light":
                     if e.get("brightness"):
                         _check_ref(e["brightness"], fields, "light.brightness")

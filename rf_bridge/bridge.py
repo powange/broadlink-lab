@@ -463,9 +463,13 @@ class Device:
                 self.client.publish(self.t(oid, "state"), json.dumps(pl), retain=True)
 
             elif t == "fan":
-                pf, _, _ = _rng(e["power"], self.fields)
+                # sans bit d'alimentation, l'allumage se lit sur la vitesse
+                if e.get("power"):
+                    on = bool(s.get(_rng(e["power"], self.fields)[0]))
+                else:
+                    on = bool(s.get(_rng(e["percentage"], self.fields)[0], 0))
                 self.client.publish(self.t(oid, "state"),
-                                    "ON" if s.get(pf) else "OFF", retain=True)
+                                    "ON" if on else "OFF", retain=True)
                 if e.get("percentage"):
                     f, lo, hi = _rng(e["percentage"], self.fields)
                     self.client.publish(self.t(oid, "pct", "state"),
@@ -539,19 +543,30 @@ class Device:
             return ch
 
         if t == "fan":
-            pf, _, _ = _rng(e["power"], self.fields)
+            # Sans champ `power`, « éteint » s'écrit « vitesse 0 » : c'est la
+            # Mantra R00143, qui n'a pas de bit d'alimentation ventilateur. Le
+            # niveau y est alors PERDU en s'éteignant, contrairement à la RF00234.
+            pf = _rng(e["power"], self.fields)[0] if e.get("power") else None
+            sf, slo, shi = (_rng(e["percentage"], self.fields)
+                            if e.get("percentage") else (None, 0, 0))
             if sub is None:
-                ch[pf] = 1 if payload == "ON" else 0
+                on = payload == "ON"
+                if pf:
+                    ch[pf] = 1 if on else 0
+                elif sf:
+                    # rallumer sans bit d'alimentation : il faut choisir une
+                    # vitesse, l'appareil n'a pas gardé la précédente
+                    ch[sf] = max(slo, 1) if on else 0
             elif sub == "pct":
                 f, lo, hi = _rng(e["percentage"], self.fields)
                 v = int(payload)
-                # 0 % vaut extinction côté HA ; la vitesse, elle, garde sa valeur
-                # (couper ne remet jamais un niveau à zéro dans ce protocole)
+                # 0 % vaut extinction côté HA
                 if v <= 0:
-                    ch[pf] = 0
+                    ch[pf if pf else f] = 0
                 else:
-                    ch[f] = max(lo, min(v, hi))
-                    ch[pf] = 1
+                    ch[f] = max(max(lo, 1), min(v, hi))
+                    if pf:
+                        ch[pf] = 1
             elif sub == "dir":
                 f, _, _ = _rng(e["direction"], self.fields)
                 ch[f] = 1 if payload == "reverse" else 0
