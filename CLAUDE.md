@@ -538,16 +538,37 @@ contre-exemple : ce qui est vrai d'une Mantra ne l'est pas de l'autre.
 
 Établi sur le matériel (16/07/2026), un paramètre à la fois :
 
-| champ | appliqué quand |
-|---|---|
-| `light`, `cct`, `lum` | **toujours**, quel que soit `cmd` |
-| `speed` | seulement si `cmd=10` |
-| `reverse` | seulement si `cmd=12` |
-| `mode`, `timer` | **présumé** `13` et `14` — non vérifié |
+| champ | appliqué quand | sémantique |
+|---|---|---|
+| `light` | **toujours**, quel que soit `cmd` | **absolue** — vérifiée |
+| `speed` | seulement si `cmd=10` | **absolue** — vérifiée (0 arrête, 2 et 6 tournent) |
+| `reverse` | seulement si `cmd=12` | **TOGGLE — le bit 18 est IGNORÉ** |
+| `cct`, `lum` | toujours (présumé) | absolue (présumée) |
+| `mode`, `timer` | présumé `13` et `14` | inconnue — toggle possible |
 
 `cmd` ne sélectionne pas un *bloc*, il sélectionne **le champ ventilateur** à
 appliquer : à `cmd=10`, `reverse` ne bouge pas ; à `cmd=12`, il bouge. Le bloc
 lampe, lui, voyage gratuitement avec n'importe quelle trame.
+
+### Ce que la trame ENCODE ≠ ce que le récepteur EN FAIT
+
+`reverse` le prouve : émettre avec `cmd=12` **inverse le sens à chaque fois**, que
+le bit 18 vaille 0 ou 1. Le récepteur ne lit pas ce bit, il bascule. C'est une
+**action**, pas un état.
+
+Le bit 18 n'est pas une erreur de décodage pour autant : il existe, il porte
+l'état que la télécommande **affiche**, et `infer` l'a trouvé correctement. C'est
+la télécommande qui suit son état interne — le récepteur s'en moque.
+
+**Aucun diff de bits ne peut révéler ça.** La carte des champs dit ce que la
+télécommande pense ; seul le matériel dit ce que le récepteur fait. Les deux se
+décrivent séparément, et §1 ne prévenait que du premier (« le bouton bascule »).
+
+**Conséquence sur les entités HA :** un champ toggle ne se *règle* pas, il se
+*bascule*. Sans retour d'état, HA ne peut pas garantir un sens de rotation — au
+mieux un `button` « inverser le sens », honnête, ou un `switch` optimiste qui
+dérive dès qu'on touche la vraie télécommande. À vérifier pour `mode` : si
+`cmd=13` fait défiler normal → nuit → éco à chaque émission, même verdict.
 
 Les codes observés à la capture, cohérents avec ça : `1` lumière off, `3`
 luminosité, `4` lumière on, `5` CCT ; `2` ventilo off, `10` vitesse, `12`
