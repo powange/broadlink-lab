@@ -83,25 +83,84 @@ DEFAULT_META_SCHEMA = [
      "options": [0, 1, 2, 4, 8]},
 ]
 
-DEFAULT_STORE = {"captures": [], "fields": [], "checksum": {"kind": "none"},
-                 "meta_schema": DEFAULT_META_SCHEMA, "device_ip": None}
+# Un ESPACE de travail = une télécommande en cours de reverse. Ses captures et sa
+# carte de champs lui sont propres : mélanger deux télécommandes polluerait le
+# diff, qui est tout l'outil. `device` porte l'identité (id/nom/fabricant/modèle),
+# la même qu'à l'export — un espace EST un appareil.
+DEFAULT_WORKSPACE = {"captures": [], "fields": [], "checksum": {"kind": "none"},
+                     "meta_schema": DEFAULT_META_SCHEMA, "ref_id": None,
+                     "entities": [], "device": {}}
+
+# Le fichier sur disque est un RECUEIL d'espaces. `device_ip` est au niveau du
+# recueil, pas de l'espace : le Broadlink est unique, il ne dépend pas de la
+# télécommande qu'on rétro-ingénierie.
+DEFAULT_BOOK = {"version": 2, "active": "default", "device_ip": None,
+                "workspaces": {"default": DEFAULT_WORKSPACE}}
+
+
+def _fill(ws):
+    """Complète un espace avec les clés par défaut manquantes (copie profonde)."""
+    for k, default in DEFAULT_WORKSPACE.items():
+        ws.setdefault(k, json.loads(json.dumps(default)))
+    return ws
+
+
+def load_book():
+    """
+    Le recueil complet, migré si besoin.
+
+    Un ancien store « plat » (une seule télécommande, format d'avant les espaces)
+    est enveloppé dans un espace « default » sans rien perdre. La migration est
+    silencieuse et idempotente : relire un recueil déjà au format v2 ne le touche
+    pas.
+    """
+    if not os.path.exists(STORE):
+        return json.loads(json.dumps(DEFAULT_BOOK))
+    with open(STORE) as fh:
+        data = json.load(fh)
+    if "workspaces" not in data:                 # ancien format plat -> migration
+        ip = data.pop("device_ip", None)
+        data.pop("version", None)
+        book = {"version": 2, "active": "default", "device_ip": ip,
+                "workspaces": {"default": _fill(data)}}
+        return book
+    book = {**json.loads(json.dumps(DEFAULT_BOOK)), **data}
+    book["workspaces"] = {k: _fill(v) for k, v in book["workspaces"].items()} \
+        or {"default": json.loads(json.dumps(DEFAULT_WORKSPACE))}
+    if book["active"] not in book["workspaces"]:
+        book["active"] = next(iter(book["workspaces"]))
+    return book
+
+
+def save_book(book):
+    tmp = STORE + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(book, fh, indent=2)
+    os.replace(tmp, STORE)
 
 
 def load_store():
-    if not os.path.exists(STORE):
-        return json.loads(json.dumps(DEFAULT_STORE))     # copie profonde
-    with open(STORE) as fh:
-        store = json.load(fh)
-    for key, default in DEFAULT_STORE.items():
-        store.setdefault(key, json.loads(json.dumps(default)))
-    return store
+    """
+    L'espace ACTIF, prêt pour tous les endpoints existants — ils n'ont pas
+    changé. `device_ip` y est injecté depuis le recueil pour rester lisible tel
+    quel (`store["device_ip"]`).
+    """
+    book = load_book()
+    ws = book["workspaces"][book["active"]]
+    ws["device_ip"] = book.get("device_ip")
+    return ws
 
 
 def save_store(data):
-    tmp = STORE + ".tmp"
-    with open(tmp, "w") as fh:
-        json.dump(data, fh, indent=2)
-    os.replace(tmp, STORE)
+    """Réécrit l'espace actif. `device_ip` repart au niveau du recueil (partagé)."""
+    book = load_book()
+    # load_store injecte TOUJOURS device_ip : sa présence à None veut donc dire
+    # « efface », pas « inchangé ». On ne garde l'ancienne valeur que si la clé
+    # est carrément absente (appelant qui n'est pas passé par load_store).
+    if "device_ip" in data:
+        book["device_ip"] = data.pop("device_ip")
+    book["workspaces"][book["active"]] = data
+    save_book(book)
 
 
 # ------------------------------------------------------------ device
@@ -232,6 +291,88 @@ def capture_cancel():
 @app.get("/api/capture/poll")
 def capture_poll():
     return jsonify(_capture)
+
+
+# ------------------------------------------------------------ espaces de travail
+
+def _slugify(text):
+    keep = "".join(c if c.isalnum() else "_" for c in (text or "").lower())
+    slug = "_".join(p for p in keep.split("_") if p)
+    return slug or "appareil"
+
+
+@app.get("/api/workspaces")
+def list_workspaces():
+    book = load_book()
+    return jsonify(
+        active=book["active"],
+        workspaces=[
+            {"id": wid, "active": wid == book["active"],
+             "device": ws.get("device") or {},
+             "name": (ws.get("device") or {}).get("name") or wid,
+             "captures": len(ws.get("captures", [])),
+             "fields": len(ws.get("fields", []))}
+            for wid, ws in book["workspaces"].items()])
+
+
+@app.post("/api/workspaces")
+def create_workspace():
+    """Nouvel espace = nouvelle télécommande à décoder. Devient l'espace actif."""
+    body = request.json or {}
+    device = {k: (body.get(k) or "").strip()
+              for k in ("id", "name", "manufacturer", "model")}
+    wid = _slugify(device.get("id") or device.get("name"))
+    book = load_book()
+    if wid in book["workspaces"]:
+        return jsonify(error=f"un espace « {wid} » existe déjà"), 409
+    device["id"] = wid
+    ws = json.loads(json.dumps(DEFAULT_WORKSPACE))
+    ws["device"] = device
+    book["workspaces"][wid] = ws
+    book["active"] = wid
+    save_book(book)
+    return jsonify(ok=True, id=wid)
+
+
+@app.post("/api/workspaces/select")
+def select_workspace():
+    book = load_book()
+    wid = (request.json or {}).get("id")
+    if wid not in book["workspaces"]:
+        return jsonify(error="espace inconnu"), 404
+    book["active"] = wid
+    save_book(book)
+    return jsonify(ok=True, id=wid)
+
+
+@app.post("/api/workspaces/device")
+def set_workspace_device():
+    """Renomme / renseigne l'appareil de l'espace actif (id inchangé)."""
+    book = load_book()
+    ws = book["workspaces"][book["active"]]
+    body = request.json or {}
+    dev = ws.get("device") or {}
+    for k in ("name", "manufacturer", "model"):
+        if k in body:
+            dev[k] = (body.get(k) or "").strip()
+    dev["id"] = book["active"]
+    ws["device"] = dev
+    save_book(book)
+    return jsonify(ok=True, device=dev)
+
+
+@app.delete("/api/workspaces/<wid>")
+def delete_workspace(wid):
+    book = load_book()
+    if wid not in book["workspaces"]:
+        return jsonify(error="espace inconnu"), 404
+    if len(book["workspaces"]) == 1:
+        return jsonify(error="c'est le dernier espace — impossible de le retirer"), 400
+    del book["workspaces"][wid]
+    if book["active"] == wid:
+        book["active"] = next(iter(book["workspaces"]))
+    save_book(book)
+    return jsonify(ok=True, active=book["active"])
 
 
 @app.post("/api/captures")
@@ -589,9 +730,13 @@ def api_profile():
     if not ref:
         return jsonify(error="aucune capture — le profil a besoin d'une référence"), 400
 
+    # L'identité vient de l'espace actif (un espace EST un appareil) ; le corps
+    # de la requête peut la compléter/écraser (formulaire d'export).
+    device = {**(store.get("device") or {}), **(body.get("device") or {})}
+
     try:
         prof = profile_mod.build(
-            device=body.get("device") or {},
+            device=device,
             rf={"frequency": FREQUENCY,
                 "gap": int(body.get("gap", 2000)),
                 "reference_b64": ref["b64"],
@@ -760,15 +905,18 @@ def api_discover():
 @app.get("/api/status")
 def status():
     ip = device_ip()
-    src = ("ui" if load_store().get("device_ip")
+    book = load_book()
+    src = ("ui" if book.get("device_ip")
            else "option" if DEVICE_IP_OPTION else "broadcast")
+    workspace = {"active": book["active"],
+                 "device": book["workspaces"][book["active"]].get("device") or {}}
     try:
         dev = get_device()
         return jsonify(connected=True, model=dev.model, host=dev.host[0],
-                       frequency=FREQUENCY, ip=ip, ip_source=src)
+                       frequency=FREQUENCY, ip=ip, ip_source=src, workspace=workspace)
     except Exception as exc:              # noqa: BLE001
         return jsonify(connected=False, error=str(exc), frequency=FREQUENCY,
-                       ip=ip, ip_source=src)
+                       ip=ip, ip_source=src, workspace=workspace)
 
 
 # ------------------------------------------------------------ static (ingress)

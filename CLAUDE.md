@@ -224,6 +224,23 @@ dev/                         # jamais embarqué — cf. dev/README.md
 └── fixtures/                # 42 captures RÉELLES — le seul vrai signal du projet
 ```
 
+### Espaces de travail : une session de reverse par télécommande
+
+Le store n'est plus un espace unique : c'est un **recueil** d'espaces, un par
+appareil (`{version, active, device_ip, workspaces:{id: {device, captures,
+fields, checksum, meta_schema, ref_id, entities}}}`). Chaque espace a ses propres
+captures et sa propre carte — mélanger deux télécommandes polluerait le diff, qui
+est tout l'outil. Un espace EST un appareil : `device` (id/nom/fabricant/modèle)
+est la même identité qu'à l'export, pré-remplie automatiquement.
+
+`device_ip` vit au niveau du recueil, pas de l'espace : le Broadlink est unique.
+
+`load_store()`/`save_store()` gardent leur signature — ils lisent/écrivent
+l'espace **actif** — donc tous les endpoints existants sont inchangés. Un ancien
+store plat est **migré** en un espace « default » au premier chargement, sans
+rien perdre ; la migration est idempotente. Sélecteur d'appareil dans la barre
+d'état (`/api/workspaces`, `.../select`, `.../device`, DELETE).
+
 ### API déjà exposée par `app.py`
 
 | Méthode | Route | Rôle |

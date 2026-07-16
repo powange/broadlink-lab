@@ -129,6 +129,13 @@
 <div id="bar">
   <strong>RF Lab</strong>
   <span id="conn"><span class="dot wait"></span>…</span>
+  <span title="Une session de reverse par télécommande : captures et carte des bits séparées">
+    <label style="display:inline">appareil</label>
+    <select id="ws" style="max-width:200px"></select>
+    <button id="ws-new" title="Nouvelle télécommande à décoder">+</button>
+    <button id="ws-edit" title="Renommer cet appareil">✎</button>
+    <button id="ws-del" class="danger" title="Retirer cet espace">✕</button>
+  </span>
   <span>
     <input id="ip" placeholder="IP du Broadlink" style="width:132px"
            title="Vide = option de l'addon, puis découverte broadcast">
@@ -242,6 +249,29 @@
     <button id="meta-save" class="primary">Enregistrer</button>
   </div>
   <div id="meta-dlg-msg"></div>
+</dialog>
+
+<dialog id="ws-dlg">
+  <form method="dialog">
+    <h2 id="ws-dlg-title" style="margin-bottom:14px">Nouvel appareil</h2>
+    <p class="dim" style="font-size:12px;margin:0 0 12px">
+      Un espace par télécommande : ses captures et sa carte de bits lui restent
+      propres. C'est aussi l'identité du profil exporté.</p>
+    <div style="margin-bottom:10px"><label for="ws-name">nom</label>
+      <input id="ws-name" style="width:100%" placeholder="Mantra Flower"></div>
+    <div class="row" style="margin-bottom:10px">
+      <div><label for="ws-id">id (technique)</label>
+        <input id="ws-id" style="width:150px" placeholder="auto d'après le nom"></div>
+      <div><label for="ws-manu">fabricant</label>
+        <input id="ws-manu" style="width:120px" placeholder="Mantra"></div>
+      <div><label for="ws-model">modèle</label>
+        <input id="ws-model" style="width:120px" placeholder="R00143"></div>
+    </div>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button value="cancel">Annuler</button>
+      <button value="ok" class="primary">Enregistrer</button>
+    </div>
+  </form>
 </dialog>
 
 <!-- ============================================ dialogue nommage -->
@@ -1472,7 +1502,89 @@ $('suggest').onclick = async () => {
   } finally { $('suggest').disabled = false; }
 };
 
-refreshStatus();
+/* ---- espaces de travail : une session de reverse par télécommande ---- */
+
+async function loadWorkspaces() {
+  const d = await GET('workspaces');
+  S.ws = d.workspaces;
+  $('ws').innerHTML = d.workspaces
+    .map(w => `<option value="${esc(w.id)}"${w.active ? ' selected' : ''}>${
+      esc(w.name)} (${w.captures})</option>`).join('');
+  $('ws-del').disabled = d.workspaces.length <= 1;
+
+  // Le formulaire d'export N'EST QUE le reflet de l'appareil actif : un espace
+  // EST un appareil. On le pré-remplit, l'utilisateur ne re-saisit rien.
+  const act = d.workspaces.find(w => w.active);
+  if (act) {
+    const dev = act.device || {};
+    $('d-id').value = dev.id || act.id;
+    $('d-name').value = dev.name || act.name || '';
+    $('d-manu').value = dev.manufacturer || '';
+    $('d-model').value = dev.model || '';
+  }
+}
+
+// Basculer d'appareil = tout recharger : captures, carte, méta, référence. Rien
+// ne doit fuir d'un espace à l'autre, c'est toute la raison d'être de la
+// séparation.
+async function reloadEverything() {
+  await loadWorkspaces();
+  await refreshStatus();
+  await loadAnalyze();
+}
+
+$('ws').onchange = async () => {
+  await SEND('workspaces/select', { id: $('ws').value });
+  S.refId = null;
+  await reloadEverything();
+};
+
+$('ws-new').onclick = () => openWsDialog(null);
+$('ws-edit').onclick = () => {
+  const cur = S.ws.find(w => w.active);
+  openWsDialog(cur ? cur.device : {});
+};
+$('ws-del').onclick = async () => {
+  const cur = S.ws.find(w => w.active);
+  if (!cur || !confirm(`Retirer l'espace « ${cur.name} » et ses captures ?`)) return;
+  await fetch(`api/workspaces/${encodeURIComponent(cur.id)}`, { method: 'DELETE' });
+  S.refId = null;
+  await reloadEverything();
+};
+
+function openWsDialog(device) {
+  const editing = device !== null;   // null = créer ; objet = renommer
+  $('ws-dlg-title').textContent = editing ? 'Renommer l\'appareil' : 'Nouvel appareil';
+  $('ws-id').value = editing ? (device.id || '') : '';
+  $('ws-id').disabled = editing;     // l'id d'un espace ne change pas
+  $('ws-name').value = editing ? (device.name || '') : '';
+  $('ws-manu').value = editing ? (device.manufacturer || '') : '';
+  $('ws-model').value = editing ? (device.model || '') : '';
+  $('ws-dlg').returnValue = '';
+  $('ws-dlg').showModal();
+  $('ws-name').focus();
+}
+
+$('ws-dlg').addEventListener('close', async () => {
+  if ($('ws-dlg').returnValue !== 'ok') return;
+  const device = {
+    name: $('ws-name').value.trim(),
+    manufacturer: $('ws-manu').value.trim(),
+    model: $('ws-model').value.trim(),
+  };
+  if (!device.name) return;
+  const editing = $('ws-id').disabled;
+  if (editing) {
+    await SEND('workspaces/device', device);
+  } else {
+    const r = await SEND('workspaces', { ...device, id: $('ws-id').value.trim() });
+    if (r.error) return msg('analysis-msg', r.error, 'err');
+    S.refId = null;
+  }
+  await reloadEverything();
+});
+
+loadWorkspaces().then(refreshStatus);
 loadAnalyze().catch(e => msg('analysis-msg', e.message, 'err'));
 </script>
 </body>

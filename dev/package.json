@@ -7,6 +7,6 @@
     "test": "node device_test.mjs && node ui_test.mjs && node cancel_test.mjs && node meta_test.mjs && node profile_test.mjs"
   },
   "dependencies": {
-    "jsdom": "^24.0.0"
+    "jsdom": "^24.1.3"
   }
 }

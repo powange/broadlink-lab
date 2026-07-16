@@ -212,6 +212,45 @@ check('export JSON : champs + correspondance observée',
   map.fields.length >= 1 && map.observed.length === 8 && map.observed[0].values.lum !== undefined,
   `${map.fields.length} champ(s), ${map.observed.length} captures`);
 
+// --- 11. espaces de travail : une session de reverse par télécommande.
+// À faire EN DERNIER : ça change l'espace actif, donc l'état global de l'UI.
+await window.loadWorkspaces();
+check('un espace « default » existe (migration de l\'ancien store)',
+  [...$('ws').options].some(o => o.value === 'default'),
+  [...$('ws').options].map(o => o.value).join(','));
+const gridCount = () => $('grid-wrap').querySelector('table.grid')
+  ?.querySelectorAll('tbody tr').length || 0;
+const nBefore = gridCount();
+check('l\'espace de départ a des captures', nBefore >= 7, `${nBefore} lignes`);
+
+// créer un nouvel appareil -> espace vierge, sans toucher au premier
+await window.fetch(new URL('api/workspaces', BASE), {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ name: 'Autre télécommande', manufacturer: 'ACME', model: 'X1' }),
+});
+await window.fetch(new URL('api/workspaces/select', BASE), {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: 'autre_telecommande' }),
+});
+await window.loadWorkspaces();
+await window.loadAnalyze();
+await sleep(200);
+check('le nouvel appareil démarre SANS capture (pas de fuite entre espaces)',
+  gridCount() === 0, `${gridCount()} lignes`);
+check('l\'export se pré-remplit avec le nouvel appareil',
+  $('d-name').value === 'Autre télécommande' && $('d-manu').value === 'ACME',
+  `${$('d-name').value} / ${$('d-manu').value}`);
+
+// revenir au premier -> les captures sont toujours là, intactes
+await window.fetch(new URL('api/workspaces/select', BASE), {
+  method: 'POST', headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ id: 'default' }),
+});
+await window.loadAnalyze();
+await sleep(200);
+check('revenir au premier appareil retrouve ses captures',
+  gridCount() === nBefore, `${gridCount()} vs ${nBefore}`);
+
 console.log(`\n${fail || errors.length ? '✗ ÉCHEC' : '✓ OK'} — ${pass} passés, ${fail} échoués`);
 if (errors.length) { console.log('\nErreurs JS :'); errors.forEach(e => console.log('  ' + e)); }
 process.exit(fail || errors.length ? 1 : 0);

@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## 0.6.0
+
+**Plusieurs télécommandes dans RF Lab.** Un sélecteur d'appareil dans la barre
+d'état : chaque appareil a ses propres captures, sa carte de bits, son checksum
+et son schéma de métadonnées. On bascule de l'un à l'autre sans rien mélanger —
+et le diff, qui est le cœur de l'outil, reste lisible.
+
+Un espace **est** un appareil : nom, fabricant, modèle. C'est la même identité
+qu'à l'export, désormais pré-remplie — plus besoin de la re-saisir.
+
+Ta session en cours n'est pas perdue : l'ancien store devient l'espace
+« default » au premier lancement, avec toutes ses captures et sa carte.
+
 ## 0.5.3
 
 **On peut modifier un champ existant** : cliquer son nom dans la liste rouvre le
