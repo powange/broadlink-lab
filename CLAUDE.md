@@ -540,11 +540,13 @@ contre-exemple : ce qui est vrai d'une Mantra ne l'est pas de l'autre.
 
 | champ | appliqué quand | sémantique |
 |---|---|---|
-| `light` | **toujours**, quel que soit `cmd` | **absolue** — vérifiée |
-| `speed` | seulement si `cmd=10` | **absolue** — vérifiée (0 arrête, 2 et 6 tournent) |
-| `reverse` | seulement si `cmd=12` | **TOGGLE — le bit 18 est IGNORÉ** |
-| `cct`, `lum` | toujours (présumé) | absolue (présumée) |
-| `mode`, `timer` | présumé `13` et `14` | inconnue — toggle possible |
+| `light` | **toujours** | **absolue** — vérifiée |
+| `lum` | **toujours**, quel que soit `cmd` | **absolue** — vérifiée, répétable |
+| `cct` | toujours (présumé) | absolue (présumée) |
+| `speed` | `cmd=10` | **absolue** — vérifiée (0 arrête, 2 et 6 tournent) |
+| `reverse` | `cmd=12` | **TOGGLE — le bit 18 est IGNORÉ** |
+| `mode` | `cmd=13` | **absolue** — vérifiée, répétable (à `cmd=8`, rien ne bouge) |
+| `timer` | présumé `cmd=14` | inconnue |
 
 `cmd` ne sélectionne pas un *bloc*, il sélectionne **le champ ventilateur** à
 appliquer : à `cmd=10`, `reverse` ne bouge pas ; à `cmd=12`, il bouge. Le bloc
@@ -563,6 +565,14 @@ la télécommande qui suit son état interne — le récepteur s'en moque.
 **Aucun diff de bits ne peut révéler ça.** La carte des champs dit ce que la
 télécommande pense ; seul le matériel dit ce que le récepteur fait. Les deux se
 décrivent séparément, et §1 ne prévenait que du premier (« le bouton bascule »).
+
+**`reverse` est le SEUL toggle** — ce n'est pas une règle du protocole, c'est une
+propriété de ce champ. `mode` est pourtant lui aussi un bouton qui *cycle* sur la
+télécommande, et le récepteur, lui, **lit sa valeur** : émettre dix fois `mode=1`
+laisse le régime sur nuit. Le caractère « bouton bascule » de la télécommande
+n'implique donc **rien** sur le récepteur, dans un sens comme dans l'autre. Il
+faut tester chaque champ, en émettant **deux fois de suite la même valeur** : si
+l'appareil change à la seconde, c'est un toggle.
 
 **Conséquence sur les entités HA :** un champ toggle ne se *règle* pas, il se
 *bascule*. Sans retour d'état, HA ne peut pas garantir un sens de rotation — au
