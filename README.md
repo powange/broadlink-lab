@@ -141,9 +141,13 @@ marque, le piège du checksum sera résolu avant la première capture.
 - **Broadlink uniquement.** Le décodage PWM, la génération et le pont MQTT sont
   indépendants du matériel, mais la couche paquet et la couche appareil sont
   Broadlink. Supporter un RTL-SDR demanderait de les réécrire.
-- **L'état est optimiste.** Ces appareils n'accusent jamais réception : ce que HA
-  affiche est ce qu'il a demandé, pas ce que la machine fait. Un appui sur la
-  télécommande physique désynchronise, et rien ne peut le corriger.
+- **L'état est optimiste par défaut.** Ces appareils n'accusent jamais
+  réception : ce que HA affiche est ce qu'il a demandé, pas ce que la machine
+  fait. Le switch **« Suivre la télécommande »** y remédie en partie — le pont
+  écoute alors la vraie télécommande et adopte son état. Ça coûte le Broadlink,
+  qui devient indisponible pour le labo et pour l'intégration Broadlink de HA :
+  d'où un switch par appareil, éteint par défaut. Et ça ne rend pas l'état
+  *vrai* pour autant : c'est ce que la **télécommande** croit.
 - **Le décodage Manchester existe, mais pas la génération** : le rebuild exige les
   index PWM.
 

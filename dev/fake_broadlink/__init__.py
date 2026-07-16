@@ -11,6 +11,7 @@ Deux comportements utiles pour le dev :
   le retour qu'on n'a pas avec un vrai ventilo : on voit tout de suite si la
   trame générée porte bien l'état visé.
 """
+import base64
 import itertools
 import logging
 import os
@@ -30,6 +31,12 @@ SENT = []
 # FAKE_LATENCY_POLLS=9999 simule « personne n'appuie sur la télécommande » :
 # indispensable pour tester l'annulation et le timeout.
 LATENCY_POLLS = int(os.environ.get("FAKE_LATENCY_POLLS", "2"))
+
+# Fichier de trames b64 à rejouer en écoute, une par ligne, consommées dans
+# l'ordre. Sans lui, le faux RM4 rejoue le protocole SYNTHÉTIQUE — inutile pour
+# tester l'écoute du pont, qui doit reconnaître de VRAIES trames contre un vrai
+# profil (le préambule et l'ID appairé sont le discriminateur).
+RF_FRAMES = os.environ.get("FAKE_RF_FRAMES")
 
 
 class FakeRM4:
@@ -65,6 +72,26 @@ class FakeRM4:
     def check_data(self):
         if not self._armed:
             raise exceptions.StorageError("pas en écoute")
+
+        if RF_FRAMES:
+            # Une file pilotée par le test : il y dépose la trame que « la vraie
+            # télécommande » vient d'émettre. StorageError et pas ReadError —
+            # c'est ce que rend le vrai RM4 tant que rien n'est arrivé, et c'est
+            # sur lui que la boucle d'écoute du pont distingue « rien » d'une
+            # panne.
+            try:
+                with open(RF_FRAMES) as fh:
+                    lines = [x.strip() for x in fh if x.strip()]
+            except OSError:
+                lines = []
+            if not lines:
+                raise exceptions.StorageError("rien reçu")
+            with open(RF_FRAMES, "w") as fh:
+                fh.writelines(x + "\n" for x in lines[1:])
+            self._armed = False
+            log.info("trame rejouée depuis la file (%d en attente)", len(lines) - 1)
+            return base64.b64decode(lines[0])
+
         self._polls += 1
         if self._polls <= LATENCY_POLLS:
             raise exceptions.ReadError("rien reçu")

@@ -14,7 +14,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FIX = os.path.join(HERE, "fixtures", "real_rf00234.json")
 
 FIELDS = [
-    {"name": "preambule", "start": 0, "end": 26, "msb_first": True, "role": "const"},
+    {"name": "preambule", "start": 0, "end": 26, "msb_first": True, "role": "const",
+     # ce qui identifie LA télécommande : c'est lui qui permet de reconnaître
+     # une trame entendue. `cmd` est const aussi, mais il varie à chaque bouton.
+     "identity": True},
     {"name": "cmd", "start": 26, "end": 32, "msb_first": True, "role": "const"},
     {"name": "light", "start": 32, "end": 33, "msb_first": True, "role": "data", "min": 0, "max": 1},
     {"name": "cct", "start": 33, "end": 36, "msb_first": True, "role": "data", "min": 1, "max": 7},

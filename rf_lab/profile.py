@@ -43,6 +43,13 @@ bits — seul le matériel les révèle :
                               Il ne se règle pas, il s'inverse : n'émettre que si
                               l'état demandé diffère. Défaut : "absolute".
 
+  "identity":   true          ce champ IDENTIFIE la télécommande — préambule et
+                              ID appairé. C'est lui qui permet de reconnaître une
+                              trame entendue. À ne PAS confondre avec `const` :
+                              `const` dit « ne réécris pas », pas « ne varie
+                              jamais ». L'octet de commande est const ET change à
+                              chaque appui.
+
 Un profil v1 reste lisible : sans `requires` ni `semantics`, le comportement est
 celui d'avant. Mais un profil v2 chargé par un vieux pont s'appliquerait de
 travers en silence — d'où le refus par le numéro de version, plutôt qu'un
@@ -168,6 +175,22 @@ def emit_groups(profile, applying=None):
     return groups or [{}]
 
 
+def identity(profile):
+    """
+    Les champs qui identifient la télécommande — préambule et ID appairé.
+
+    C'est ce qui permet de reconnaître une trame entendue, donc de suivre la
+    vraie télécommande. Sans eux, le pont ne peut pas écouter : deux exemplaires
+    du même modèle n'ont que cet ID pour les distinguer.
+
+    Surtout PAS « tous les champs const » : `const` veut dire « ne réécris pas ».
+    L'octet de commande est const, et il change à chaque bouton pressé — matcher
+    dessus ferait rejeter au pont ses propres trames. C'est un vrai bug que les
+    tests ont attrapé.
+    """
+    return [f for f in profile.get("fields", []) if f.get("identity")]
+
+
 def toggles(profile):
     """Les champs que le récepteur bascule au lieu de les régler."""
     return [f["name"] for f in profile.get("fields", [])
@@ -209,6 +232,9 @@ def validate(profile):
                 errs.append(f"champ « {f.get('name')} » : tranche de bits invalide")
             errs += _check_semantics(f)
             errs += _check_requires(f, fields)
+            if f.get("identity") and f.get("role") != "const":
+                errs.append(f"champ « {f.get('name')} » : identity exige le rôle "
+                            f"const — un champ qu'on réécrit n'identifie rien")
 
         if not any(f.get("role") == "crc" for f in fields) \
                 and (profile.get("checksum") or {}).get("kind", "none") != "none":

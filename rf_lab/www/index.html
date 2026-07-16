@@ -268,6 +268,9 @@
         <input id="f-max" type="number" style="width:64px" placeholder="auto"></div>
       <div><label for="f-msb">ordre</label>
         <select id="f-msb"><option value="1">MSB first</option><option value="0">LSB first</option></select></div>
+      <div id="f-id-box"><label for="f-identity"
+          title="Le préambule + l'ID appairé. C'est lui qui permet au pont de reconnaître une trame entendue et de suivre la vraie télécommande.">identifie</label>
+        <input id="f-identity" type="checkbox" style="width:18px;height:18px"></div>
       <div><label for="f-crc">checksum</label>
         <select id="f-crc">
           <option value="none">none</option>
@@ -928,6 +931,7 @@ function openDialog() {
   $('f-req-f').value = on;
   $('f-req-v').value = on ? req[on] : '';
   $('f-sem').value = existing?.semantics || 'absolute';
+  $('f-identity').checked = !!existing?.identity;
   syncK();
   syncRecv();
   msg('f-detect-msg', '');
@@ -940,6 +944,10 @@ function openDialog() {
 function syncRecv() {
   const data = $('f-role').value === 'data';
   $('f-recv').style.display = data ? '' : 'none';
+  // « identifie » n'a de sens que sur un const : un champ qu'on réécrit
+  // n'identifie rien. Et attention, const ≠ identité — l'octet de commande est
+  // const et change à chaque bouton pressé.
+  $('f-id-box').style.display = $('f-role').value === 'const' ? '' : 'none';
   $('f-req-v').disabled = !$('f-req-f').value;
   if (!$('f-req-f').value) $('f-req-v').value = '';
 }
@@ -995,6 +1003,7 @@ $('dlg').addEventListener('close', async () => {
   };
   if ($('f-min').value !== '') f.min = +$('f-min').value;
   if ($('f-max').value !== '') f.max = +$('f-max').value;
+  if (f.role === 'const' && $('f-identity').checked) f.identity = true;
   if (f.role === 'data') {
     if ($('f-sem').value === 'toggle') f.semantics = 'toggle';
     const rq = $('f-req-f').value;
@@ -1020,6 +1029,7 @@ function renderFields() {
       <b>${esc(f.name)}</b>
       <span class="mono dim">[${f.start},${f.end}) ${width(f)}b${
         f.role === 'const' ? ' const' : (f.min != null || f.max != null ? ` ${minOf(f)}-${maxOf(f)}` : '')}</span>
+      ${f.identity ? '<span class="mono" style="color:var(--ok)" title="Identifie la télécommande — c\'est ce qui permet au pont de reconnaître ses trames">id</span>' : ''}
       ${f.semantics === 'toggle'
         ? '<span class="mono" style="color:var(--warn)" title="Le récepteur ignore la valeur et bascule à chaque trame">⇄</span>' : ''}
       ${f.requires ? `<span class="mono" style="color:var(--accent)"

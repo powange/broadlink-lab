@@ -26,6 +26,7 @@ DEUX CONTRAINTES DICTENT TOUTE L'ARCHITECTURE :
    a demandé, pas ce que la machine fait. Un appui sur la télécommande physique
    désynchronise, et rien ne peut le corriger : le ventilo n'émet rien.
 """
+import base64
 import json
 import logging
 import os
@@ -59,6 +60,12 @@ WATCH_SECONDS = float(os.environ.get("WATCH_SECONDS", "3"))
 
 _dev = None
 _dev_lock = threading.Lock()
+
+# Le RM4 est HALF-DUPLEX : un seul émetteur-récepteur, donc il écoute OU il
+# émet, jamais les deux. Un verrou unique pour la radio, et toute émission
+# désarme l'écoute — le firmware ne dit pas si elle survit, on ne parie pas.
+_radio = threading.RLock()
+_listener = None
 
 app = Flask(__name__, static_folder=None)
 bridge = None                     # instance de Bridge, posée par main()
@@ -159,9 +166,13 @@ class Device:
     # ---- persistance de l'état
     def _load_state(self):
         base = profile_mod.defaults(self.p)
+        self.listen = False
         try:
             with open(self.state_path) as fh:
                 saved = json.load(fh)
+            # `_listen` n'est pas un champ de la trame : c'est une fonction du
+            # pont. Le souligné le sort de l'espace de noms des champs.
+            self.listen = bool(saved.get("_listen", False))
             # ne garder que les champs qui existent encore dans le profil
             base.update({k: v for k, v in saved.items() if k in base})
             log.info("[%s] état restauré : %s", self.id, base)
@@ -175,7 +186,7 @@ class Device:
             os.makedirs(STATE_DIR, exist_ok=True)
             tmp = self.state_path + ".tmp"
             with open(tmp, "w") as fh:
-                json.dump(self.state, fh)
+                json.dump({**self.state, "_listen": self.listen}, fh)
             os.replace(tmp, self.state_path)
         except OSError as exc:
             log.warning("[%s] état non persisté : %s", self.id, exc)
@@ -254,13 +265,84 @@ class Device:
         data = decoder.encode_packet(durations, pkt["header"], pkt["repeats"],
                                      pkt.get("terminator", True))
         try:
-            get_device().send_data(data)
+            with _radio:
+                if _listener is not None:
+                    _listener.disarm()
+                get_device().send_data(data)
             log.info("[%s] émis%s -> %s", self.id,
                      " " + repr(require) if require else "", self.state)
             return True
         except Exception as exc:              # noqa: BLE001
             log.exception("[%s] émission impossible : %s", self.id, exc)
             return False
+
+    # ---- écoute : suivre la VRAIE télécommande
+    def absorb(self, b64):
+        """
+        Cette trame vient-elle de MA télécommande ? Si oui, en adopter l'état.
+
+        Le discriminateur, ce sont les champs marqués `identity` : le préambule
+        et l'ID appairé. Trois filtres indépendants — longueur, identité
+        identique à la référence, checksum juste — ne laissent aucune chance de
+        confondre deux appareils.
+
+        PAS « tous les champs const ». `const` veut dire « ne réécris pas », et
+        l'octet de commande est const tout en changeant à chaque bouton pressé :
+        matcher dessus faisait rejeter au pont ses PROPRES trames.
+
+        Retourne True si la trame était pour nous.
+
+        LES TOGGLES SONT EXCLUS, et ce n'est pas un détail : le bit d'un champ
+        toggle dit ce que la TÉLÉCOMMANDE croit. Dès que le pont émet, l'appareil
+        bascule sans qu'elle le sache, et sa croyance devient fausse. L'adopter
+        propagerait son erreur dans HA.
+        """
+        try:
+            pkt = decoder.decode_packet(b64)
+            bits = decoder.pick_frame(decoder.decode_pwm(pkt["durations"], self.gap))
+            ref = decoder.pick_frame(decoder.decode_pwm(
+                decoder.decode_packet(self.p["rf"]["reference_b64"])["durations"],
+                self.gap))
+        except Exception:                     # noqa: BLE001
+            return False
+        if not bits or len(bits) != len(ref):
+            return False
+        ident = profile_mod.identity(self.p)
+        if not ident:
+            return False                      # cf. Listener : dit une fois pourquoi
+        for f in ident:
+            if bits[f["start"]:f["end"]] != ref[f["start"]:f["end"]]:
+                return False
+
+        crc = next((f for f in self.fields if f.get("role") == "crc"), None)
+        ck = self.p.get("checksum") or {"kind": "none"}
+        if crc and ck.get("kind", "none") != "none":
+            want = decoder.compute_checksum(bits, ck["kind"], crc["start"],
+                                            crc["end"], ck.get("k", 0))
+            if want != decoder.field_value(bits, crc["start"], crc["end"],
+                                           crc.get("msb_first", True)):
+                return False
+
+        tog = set(profile_mod.toggles(self.p))
+        heard = {f["name"]: decoder.field_value(bits, f["start"], f["end"],
+                                                f.get("msb_first", True))
+                 for f in profile_mod.data_fields(self.p) if f["name"] not in tog}
+        with self.lock:
+            changed = {k: v for k, v in heard.items() if self.state.get(k) != v}
+            if not changed:
+                return True                   # déjà à jour : rien à republier
+            self.state.update(changed)
+            self._save_state()
+        log.info("[%s] télécommande entendue -> %s", self.id, changed)
+        self.publish_state()                  # et surtout : PAS de réémission
+        return True
+
+    def set_listen(self, on):
+        with self.lock:
+            self.listen = bool(on)
+            self._save_state()
+        log.info("[%s] écoute continue %s", self.id, "activée" if on else "coupée")
+        self.publish_state()
 
     def apply(self, changes):
         """Applique des valeurs brutes, émet, republie l'état."""
@@ -284,6 +366,19 @@ class Device:
             topic = f"{DISCOVERY_PREFIX}/{comp}/{self.id}/{oid}/config"
             self.client.publish(topic, json.dumps(cfg), retain=True)
             log.info("[%s] discovery %s -> %s", self.id, comp, topic)
+        # Ce switch ne décrit aucun champ de la trame : c'est un réglage du pont.
+        # Il est par appareil parce que le coût l'est aussi — écouter monopolise
+        # le RM4, et personne ne doit le payer sans l'avoir demandé.
+        self.client.publish(
+            f"{DISCOVERY_PREFIX}/switch/{self.id}/listen/config",
+            json.dumps({"unique_id": f"{self.id}_listen", "device": self.ha_device,
+                        "availability_topic": f"{BASE}/status",
+                        "name": "Suivre la télécommande",
+                        "icon": "mdi:remote",
+                        "entity_category": "config",
+                        "command_topic": self.t("listen", "set"),
+                        "state_topic": self.t("listen", "state"),
+                        "payload_on": "ON", "payload_off": "OFF"}), retain=True)
 
     def _discovery(self, e, i):
         t = e["type"]
@@ -347,6 +442,8 @@ class Device:
         raise profile_mod.ProfileError(f"type d'entité inconnu : {t}")
 
     def publish_state(self):
+        self.client.publish(self.t("listen", "state"),
+                            "ON" if self.listen else "OFF", retain=True)
         for i, e in enumerate(self.p["entities"]):
             t, oid = e["type"], (e.get("id") or f"{e['type']}{i or ''}")
             s = self.state
@@ -405,6 +502,9 @@ class Device:
         if len(parts) < 4 or parts[-1] != "set":
             return
         oid = parts[2]
+        if oid == "listen":               # réglage du pont, pas une entité du profil
+            self.set_listen(payload == "ON")
+            return
         e = next((x for i, x in enumerate(self.p["entities"])
                   if (x.get("id") or f"{x['type']}{i or ''}") == oid), None)
         if e is None:
@@ -489,6 +589,107 @@ def read_profile(path):
         return None, [f"illisible : {exc}"]
     errs = profile_mod.validate(p)
     return (None, errs) if errs else (p, [])
+
+
+class Listener:
+    """
+    Écoute continue : suivre la VRAIE télécommande.
+
+    C'est ce qui enlève le mot « optimiste » du README. Sans elle, un appui sur
+    la télécommande physique désynchronise Home Assistant pour toujours — le
+    ventilateur n'accuse jamais réception, donc rien ne peut le corriger.
+
+    TROIS CHOIX, ET ILS SE TIENNENT :
+
+    1. **Un switch par appareil, éteint par défaut.** Écouter monopolise le RM4 :
+       ni le labo ni l'intégration Broadlink de HA ne pourront s'en servir
+       pendant ce temps. Personne ne doit payer ça sans l'avoir demandé. Si aucun
+       appareil n'est suivi, ce fil ne touche PAS la radio.
+
+    2. **Le RM4 est half-duplex.** Émettre coupe l'écoute — on ne parie pas sur
+       sa survie, on réarme systématiquement après. La fenêtre d'aveuglement fait
+       quelques dizaines de ms, et le pont n'émet que sur commande.
+
+    3. **Mono-fréquence.** `find_rf_packet` accorde le récepteur sur UNE
+       fréquence. Deux appareils suivis sur des fréquences différentes sont
+       impossibles à écouter ensemble : on le dit plutôt que d'en ignorer un en
+       silence.
+    """
+
+    POLL = 0.4          # comme capture_worker : le RM4 ne rend rien plus vite
+
+    def __init__(self, bridge):
+        self.bridge = bridge
+        self.stop = threading.Event()
+        self._armed = False
+        self._freq = None
+
+    def disarm(self):
+        """Appelé par toute émission : le RM4 ne fait pas les deux."""
+        self._armed = False
+
+    def watched(self):
+        return [d for d in list(self.bridge.devices.values()) if d.listen]
+
+    def frequency(self, devs):
+        """
+        La fréquence à écouter, et la liste des appareils qu'on laisse de côté.
+
+        Un récepteur ne s'accorde que sur une fréquence : la majorité l'emporte,
+        et on nomme les exclus. Les taire serait pire — ils seraient « suivis »
+        dans l'UI sans que rien n'arrive jamais.
+        """
+        freqs = {}
+        for d in devs:
+            freqs.setdefault(d.p["rf"].get("frequency", 433.92), []).append(d)
+        best = max(freqs, key=lambda f: len(freqs[f]))
+        left = [d.id for f, ds in freqs.items() if f != best for d in ds]
+        return best, left
+
+    def run(self):
+        left_warned = mute_warned = None
+        while not self.stop.wait(self.POLL):
+            devs = self.watched()
+            mute = [d.id for d in devs if not profile_mod.identity(d.p)]
+            if mute != mute_warned:
+                mute_warned = mute
+                if mute:
+                    log.warning("%s est suivi mais son profil ne marque aucun champ "
+                                "`identity` : impossible de reconnaître ses trames",
+                                ", ".join(mute))
+            if not devs:
+                self._armed = False           # radio libre : on n'y touche pas
+                continue
+            freq, left = self.frequency(devs)
+            if left != left_warned:
+                left_warned = left
+                if left:
+                    log.warning("écoute sur %s MHz : %s est sur une autre "
+                                "fréquence et ne sera PAS suivi", freq, ", ".join(left))
+            try:
+                with _radio:
+                    dev = get_device()
+                    if not self._armed or freq != self._freq:
+                        dev.find_rf_packet(frequency=freq)
+                        self._armed, self._freq = True, freq
+                        continue              # rien à lire au premier tour
+                    data = dev.check_data()
+            except broadlink.exceptions.StorageError:
+                continue                      # rien reçu encore : le cas normal
+            except Exception as exc:          # noqa: BLE001
+                log.info("écoute : %s", exc)
+                self._armed = False
+                continue
+
+            # une capture consomme l'armement : le prochain tour réarmera
+            self._armed = False
+            b64 = base64.b64encode(data).decode()
+            for d in devs:
+                if d.absorb(b64):
+                    break
+            else:
+                log.info("trame entendue, aucun profil suivi ne la reconnaît "
+                         "(%d octets)", len(data))
 
 
 class Bridge:
@@ -723,6 +924,7 @@ def static_files(path):
 def main():
     global bridge
 
+    global _listener
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
                          client_id="rf_bridge", clean_session=True)
     user = os.environ.get("MQTT_USER")
@@ -783,8 +985,13 @@ def main():
                 log.warning("broker injoignable (%s) — nouvelle tentative dans 5 s", exc)
                 time.sleep(5)
 
+    _listener = Listener(bridge)
     threading.Thread(target=mqtt_forever, daemon=True).start()
     threading.Thread(target=bridge.watch, daemon=True).start()
+    # Ce fil ne touche la radio que si un appareil est effectivement suivi :
+    # tant qu'aucun switch n'est activé, le RM4 reste libre pour le labo et pour
+    # l'intégration Broadlink de HA.
+    threading.Thread(target=_listener.run, daemon=True).start()
 
     # L'UI en premier, toujours : c'est l'outil de diagnostic.
     try:

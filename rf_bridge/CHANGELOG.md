@@ -1,5 +1,36 @@
 # Journal des modifications
 
+## 0.5.0
+
+**« Suivre la télécommande » — l'état de Home Assistant peut cesser de mentir.**
+
+Jusqu'ici un appui sur la télécommande physique désynchronisait HA **pour
+toujours** : l'appareil n'accuse jamais réception, donc rien ne pouvait le
+corriger. Le pont sait maintenant écouter la vraie télécommande et adopter son
+état.
+
+Un **switch par appareil, éteint par défaut**, parce que le coût est réel :
+écouter monopolise le Broadlink, qui n'est plus disponible pour le labo ni pour
+l'intégration Broadlink de HA. Tant qu'aucun appareil n'est suivi, le pont ne
+touche pas la radio.
+
+Trois choses qui se déduisent du matériel :
+
+- **Le Broadlink est half-duplex** : il écoute ou il émet. Toute émission coupe
+  l'écoute, qui est réarmée juste après — quelques dizaines de millisecondes
+  d'aveuglement, et seulement quand HA commande.
+- **Une seule fréquence à la fois.** Deux appareils suivis sur des fréquences
+  différentes sont impossibles à écouter ensemble : le pont le dit dans son
+  journal plutôt que d'en ignorer un en silence.
+- **Les toggles sont exclus.** Le bit d'un champ « bascule » dit ce que la
+  télécommande croit ; dès que le pont émet, l'appareil bascule sans qu'elle le
+  sache. Adopter sa croyance propagerait son erreur.
+
+Nouveau champ de profil : **`identity`** — le préambule et l'ID appairé, ce qui
+permet de reconnaître une trame entendue. À ne pas confondre avec `const`, qui
+dit seulement « ne réécris pas » : l'octet de commande est const *et* change à
+chaque bouton pressé.
+
 ## 0.4.0
 
 **Profils v2 : `requires` et `semantics`.** Le pont supposait qu'une trame porte

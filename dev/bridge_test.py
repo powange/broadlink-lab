@@ -28,6 +28,7 @@ import real_seed  # noqa: E402
 PORT = int(os.environ.get("MQTT_TEST_PORT", "18830"))
 UI_PORT = PORT + 1
 PROFILE_DIR = os.path.join(HERE, ".profiles")
+RF_QUEUE = os.path.join(HERE, ".rf_queue")
 STATE_DIR = os.path.join(HERE, ".bridge_state")
 
 ok = True
@@ -110,6 +111,7 @@ def main():
     env = dict(os.environ,
                MQTT_HOST="127.0.0.1", MQTT_PORT=str(PORT),
                PROFILE_DIR=PROFILE_DIR, STATE_DIR=STATE_DIR,
+               FAKE_RF_FRAMES=RF_QUEUE,
                DEVICE_IP="192.168.0.99", LOG_LEVEL="info",
                PORT=str(UI_PORT), WATCH_SECONDS="1",
                PYTHONPATH=f"{HERE}:{os.path.join(ROOT, 'rf_bridge')}")
@@ -154,10 +156,13 @@ def main():
         got = wait_for(lambda: any(t.endswith("/config") for t in seen), "discovery")
         check("le pont publie la discovery MQTT", got)
         cfgs = {t: json.loads(p) for t, p in seen.items() if t.endswith("/config")}
-        check("3 entités publiées (lumière, ventilateur, minuterie)", len(cfgs) == 3,
+        # 3 entités viennent du profil ; le 4e switch est une fonction du PONT
+        # (« suivre la télécommande »), pas un champ de la trame.
+        check("3 entités du profil + le switch d'écoute du pont", len(cfgs) == 4,
               sorted(t.split("/")[1] for t in cfgs))
         comps = sorted(t.split("/")[1] for t in cfgs)
-        check("les bons composants HA", comps == ["fan", "light", "number"], comps)
+        check("les bons composants HA", comps == ["fan", "light", "number", "switch"],
+              comps)
 
         anycfg = next(iter(cfgs.values()))
         dev = anycfg.get("device", {})
@@ -365,7 +370,7 @@ def main():
             "rf": {"frequency": 433.92, "gap": fix["expected"]["gap"],
                    "reference_b64": fix["captures"][0]["b64"]},
             "fields": [
-                {"name": "id", "start": 0, "end": 16, "role": "const"},
+                {"name": "id", "start": 0, "end": 16, "role": "const", "identity": True},
                 {"name": "mode", "start": 16, "end": 18, "role": "data",
                  "min": 0, "max": 2, "requires": {"cmd": 13}},
                 {"name": "reverse", "start": 18, "end": 19, "role": "data",
@@ -431,6 +436,66 @@ def main():
         buf.extend(log_lines())
         check("redemander le sens courant n'émet RIEN (sinon ça l'inverserait)",
               len(flower_frames()) == n, f"{len(flower_frames()) - n} trame(s) de trop")
+
+        # ---- ÉCOUTE CONTINUE : suivre la vraie télécommande.
+        # C'est ce qui enlève le mot « optimiste » du README : sans elle, un
+        # appui sur la télécommande physique désynchronise HA pour toujours.
+        check("un switch « suivre la télécommande » est publié",
+              "homeassistant/switch/flower/listen/config" in seen,
+              [t for t in seen if "/listen/" in t])
+        check("il est éteint par défaut — écouter monopolise le RM4",
+              seen.get("rf_bridge/flower/listen/state") == "OFF",
+              seen.get("rf_bridge/flower/listen/state"))
+
+        # Tant qu'aucun appareil n'est suivi, la radio ne doit PAS être touchée :
+        # le labo et l'intégration Broadlink de HA doivent pouvoir s'en servir.
+        open(RF_QUEUE, "w").write(fix["captures"][10]["b64"] + "\n")
+        time.sleep(2)
+        check("écoute éteinte : la trame n'est pas consommée, le RM4 reste libre",
+              open(RF_QUEUE).read().strip() != "", "file intacte")
+
+        cli.publish("rf_bridge/flower/listen/set", "ON")
+        got = wait_for(lambda: seen.get("rf_bridge/flower/listen/state") == "ON",
+                       "switch d'écoute activé")
+        check("le switch s'allume", got)
+
+        # « lum10 -> 2 » dans la référence ; cette capture-ci est à lum=11.
+        n = len(flower_frames())
+        before = seen.get("rf_bridge/flower/light/state")
+        got = wait_for(lambda: open(RF_QUEUE).read().strip() == "",
+                       "trame consommée par l'écoute", 20)
+        check("écoute allumée : le pont capte la trame", got)
+        got = wait_for(lambda: seen.get("rf_bridge/flower/light/state") != before,
+                       "état republié", 20)
+        check("l'état de HA suit la vraie télécommande", got,
+              seen.get("rf_bridge/flower/light/state"))
+        st_light = json.loads(seen.get("rf_bridge/flower/light/state") or "{}")
+        # lum=11 sur 2..11 -> 255/255 côté HA
+        check("la luminosité entendue arrive dans HA", st_light.get("brightness") == 255,
+              st_light)
+
+        # LE point : entendre n'est pas commander. Réémettre ce qu'on vient
+        # d'entendre serait au mieux inutile, au pire une boucle sans fin.
+        time.sleep(1.5)
+        buf.extend(log_lines())
+        check("entendre ne déclenche AUCUNE émission",
+              len(flower_frames()) == n, f"{len(flower_frames()) - n} trame(s) de trop")
+
+        # Une trame d'un autre appareil ne doit pas être adoptée : le préambule
+        # et l'ID appairé sont le discriminateur, et ils sont déjà dans le profil.
+        before = seen.get("rf_bridge/flower/light/state")
+        store_n = real_seed.store()
+        open(RF_QUEUE, "w").write(store_n["captures"][3]["b64"] + "\n")
+        wait_for(lambda: open(RF_QUEUE).read().strip() == "", "trame étrangère lue", 20)
+        time.sleep(1.0)
+        check("une trame d'une AUTRE télécommande est ignorée",
+              seen.get("rf_bridge/flower/light/state") == before,
+              "l'état n'a pas bougé")
+
+        cli.publish("rf_bridge/flower/listen/set", "OFF")
+        wait_for(lambda: seen.get("rf_bridge/flower/listen/state") == "OFF",
+                 "écoute coupée")
+        check("l'écoute se coupe", True)
 
         # et le faux RM4 confirme que la contrainte a bien écrit `cmd` dans les bits
         code, st = ui("/api/status")

@@ -1,5 +1,15 @@
 # Journal des modifications
 
+## 0.5.1
+
+**Marquer ce qui identifie la télécommande.** Une case « identifie » sur les
+champs `const` : c'est le préambule et l'ID appairé. RF Bridge s'en sert pour
+reconnaître une trame entendue et suivre la vraie télécommande.
+
+`const` ne suffisait pas : il veut dire « ne réécris pas », pas « ne varie
+jamais ». L'octet de commande est const et change à chaque bouton — le confondre
+avec l'identité faisait rejeter au pont ses propres trames.
+
 ## 0.5.0
 
 **Déclarer ce que le récepteur fait d'un champ** — le labo produit des profils v2.

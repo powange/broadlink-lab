@@ -144,6 +144,19 @@ check('la condition est persistée',
 check('les chips montrent la bascule et la condition',
   /⇄/.test($('fields-box').innerHTML) && /si cmd=10/.test($('fields-box').innerHTML));
 
+// L'identité : ce qui permet au pont de reconnaître une trame entendue, donc de
+// suivre la vraie télécommande. `const` ne suffit PAS — l'octet de commande est
+// const et change à chaque bouton.
+await openField('preambule');
+check("« identifie » n'apparaît que sur un const", $('f-id-box').style.display !== 'none');
+check("… et il est déjà coché sur le préambule (le seed le déclare)", $('f-identity').checked);
+$('dlg').close('ok');
+await sleep(500);
+await openField('cmd');
+check("l'octet de commande est const mais n'identifie pas", !$('f-identity').checked);
+$('dlg').close('ok');
+await sleep(500);
+
 // --- construction du profil : le livrable du labo
 $('d-name').value = 'Mantra Nenufar';
 $('d-manu').value = 'Mantra';
@@ -163,6 +176,9 @@ check('la référence voyage dans le profil (elle porte l\'ID appairé)',
 check('la carte des 64 bits est embarquée', prof.fields.length === 11, prof.fields.length);
 check('le checksum est embarqué', prof.checksum.kind === 'sub8' && prof.checksum.k === 85);
 // LE livrable : ce que le pont a besoin de savoir et que les bits ne disent pas.
+check("le profil embarque l'identité de la télécommande",
+  prof.fields.filter(f => f.identity).map(f => f.name).join(',') === 'preambule',
+  prof.fields.filter(f => f.identity).map(f => f.name).join(','));
 check('le profil embarque la sémantique du récepteur',
   prof.fields.find(f => f.name === 'reverse')?.semantics === 'toggle');
 check('le profil embarque la condition d\'application',

@@ -36,7 +36,7 @@ def check(label, cond, extra=""):
 
 # La carte réelle de la R00143, sémantique comprise (§10).
 FIELDS = [
-    {"name": "id", "start": 0, "end": 16, "role": "const"},
+    {"name": "id", "start": 0, "end": 16, "role": "const", "identity": True},
     {"name": "mode", "start": 16, "end": 18, "role": "data", "min": 0, "max": 2,
      "requires": {"cmd": 13}},
     # Le récepteur IGNORE le bit 18 : il inverse le sens à chaque trame cmd=12.
@@ -108,6 +108,16 @@ check("« tout » exclut les toggles — sinon chaque resynchro inverserait le s
 check("… mais garde les champs absolus", {"cmd": 10} in groups and {"cmd": 13} in groups)
 check("les toggles sont nommés", P.toggles(PROF) == ["reverse"], P.toggles(PROF))
 
+# --- l'identité : ce qui permet de reconnaître une trame entendue.
+# PAS « les champs const » : `const` dit « ne réécris pas ». L'octet de commande
+# est const ET change à chaque bouton — matcher dessus ferait rejeter au pont ses
+# PROPRES trames. C'est un vrai bug, attrapé par les tests d'intégration.
+check("l'identité est le préambule, pas tous les const",
+      [f["name"] for f in P.identity(PROF)] == ["id"],
+      [f["name"] for f in P.identity(PROF)])
+check("l'octet de commande est const mais n'identifie rien",
+      "cmd" not in [f["name"] for f in P.identity(PROF)])
+
 # --- la RF00234 : aucun requires, donc le comportement v1 à l'identique
 V1 = {**PROF, "version": 1,
       "fields": [{k: v for k, v in f.items() if k not in ("requires", "semantics")}
@@ -150,6 +160,11 @@ check("un champ const ne peut pas être un toggle -> refusé",
           errs(lambda p: field(p, "cmd").update(semantics="toggle"))))
 check("une version inconnue -> refusée",
       any("inconnue" in e for e in errs(lambda p: p.update(version=99))))
+check("identity sur un champ réécrit -> refusé — il n'identifierait rien",
+      any("identifie rien" in e for e in
+          errs(lambda p: field(p, "speed").update(identity=True))))
+
+
 
 # --- le pont doit pouvoir fabriquer les trames : les valeurs de départ
 d = P.defaults(PROF)
