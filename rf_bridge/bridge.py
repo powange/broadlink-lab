@@ -646,7 +646,16 @@ class Listener:
         self._freq = None
 
     def disarm(self):
-        """Appelé par toute émission : le RM4 ne fait pas les deux."""
+        """
+        Appelé par toute émission, sous le verrou radio : le RM4 ne fait pas les
+        deux. On le sort proprement du mode écoute — laisser une session ouverte
+        empêcherait le prochain réarmement (cf. le cancel après capture).
+        """
+        if self._armed:
+            try:
+                get_device().cancel_sweep_frequency()
+            except Exception:                 # noqa: BLE001
+                pass
         self._armed = False
 
     def watched(self):
@@ -702,7 +711,16 @@ class Listener:
                 self._armed = False
                 continue
 
-            # une capture consomme l'armement : le prochain tour réarmera
+            # Une capture consomme l'armement. Et le RM4 Pro ne se laisse PAS
+            # réarmer tant que la session d'écoute n'est pas close : sans ce
+            # cancel, la première trame passe puis plus rien (le bug « marche une
+            # fois »). Le labo et find_frequency.py cancellent déjà ; l'écoute le
+            # devait aussi.
+            try:
+                with _radio:
+                    dev.cancel_sweep_frequency()
+            except Exception:                 # noqa: BLE001
+                pass
             self._armed = False
             b64 = base64.b64encode(data).decode()
             for d in devs:

@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## 0.5.3
+
+**« Suivre la télécommande » ne se synchronisait qu'une fois.** Le premier appui
+sur la vraie télécommande mettait bien HA à jour, puis plus rien.
+
+Le RM4 sort du mode écoute dès qu'il rend une trame, et il refuse de s'y remettre
+tant que la session n'a pas été close par `cancel_sweep_frequency`. La boucle
+d'écoute rappelait `find_rf_packet` sans ce cancel : le réarmement échouait en
+silence, et seule la première trame était captée. Le pont cancelle maintenant
+après chaque trame reçue, et en sortie d'écoute quand une émission l'interrompt.
+
 ## 0.5.2
 
 **Le ventilateur d'une télécommande sans bit d'alimentation apparaît enfin dans

@@ -49,6 +49,7 @@ class FakeRM4:
         self.mac = MAC
         self.is_locked = False
         self._armed = False
+        self._needs_cancel = False
         self._polls = 0
         self._seq = itertools.cycle(protocol.SEQ)
 
@@ -58,6 +59,14 @@ class FakeRM4:
         return True
 
     def find_rf_packet(self, frequency=None):
+        # Le vrai RM4 Pro n'entre PAS en écoute si la session précédente n'a pas
+        # été close par cancel_sweep_frequency. Sans ce cancel, la première trame
+        # est captée puis plus rien : c'est le bug « marche une fois ». On ne le
+        # modélise que sur le chemin RF_FRAMES (l'écoute continue du pont) pour
+        # ne pas perturber les tests de capture.
+        if RF_FRAMES and self._needs_cancel:
+            log.info("réarmement IGNORÉ : cancel_sweep_frequency requis d'abord")
+            return True
         log.info("écoute RF @ %s MHz", frequency)
         self._armed = True
         self._polls = 0
@@ -67,6 +76,7 @@ class FakeRM4:
         """Commande 0x1e du vrai appareil : sortie du mode apprentissage."""
         log.info("sortie du mode écoute")
         self._armed = False
+        self._needs_cancel = False
         return True
 
     def check_data(self):
@@ -89,6 +99,7 @@ class FakeRM4:
             with open(RF_FRAMES, "w") as fh:
                 fh.writelines(x + "\n" for x in lines[1:])
             self._armed = False
+            self._needs_cancel = True
             log.info("trame rejouée depuis la file (%d en attente)", len(lines) - 1)
             return base64.b64decode(lines[0])
 

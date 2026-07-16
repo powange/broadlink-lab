@@ -482,6 +482,21 @@ def main():
         check("la luminosité entendue arrive dans HA", st_light.get("brightness") == 255,
               st_light)
 
+        # LE test qui manquait : une DEUXIÈME trame. « Marche une fois puis
+        # s'arrête » ne pouvait pas être attrapé tant qu'on n'en envoyait qu'une.
+        # Le RM4 sort du mode écoute dès qu'il rend une trame ; il faut le réarmer
+        # à chaque fois, sans quoi seule la première est captée.
+        before2 = seen.get("rf_bridge/flower/light/state")
+        # captures[22] est à lum10 -> brut 2 -> brightness 1 côté HA : bien distinct
+        open(RF_QUEUE, "w").write(fix["captures"][22]["b64"] + "\\n")
+        got = wait_for(lambda: open(RF_QUEUE).read().strip() == "",
+                       "2e trame consommée (le réarmement marche)", 20)
+        check("une DEUXIÈME trame est captée — l'écoute se réarme", got)
+        got = wait_for(lambda: seen.get("rf_bridge/flower/light/state") != before2,
+                       "2e état republié", 20)
+        check("la 2e trame met HA à jour aussi", got,
+              seen.get("rf_bridge/flower/light/state"))
+
         # LE point : entendre n'est pas commander. Réémettre ce qu'on vient
         # d'entendre serait au mieux inutile, au pire une boucle sans fin.
         time.sleep(1.5)

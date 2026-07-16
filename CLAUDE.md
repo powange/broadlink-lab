@@ -347,6 +347,14 @@ décision §3.1 tient. `auth()` passe, l'appareil entre en écoute RF. La
 cohabitation avec l'intégration Broadlink de HA n'a posé aucun problème (elle
 était active pendant les tests), contrairement à ce que craint §7.
 
+**Après une capture, le RM4 ne se réarme PAS sans `cancel_sweep_frequency`.**
+`find_rf_packet` met en écoute et `check_data` rend la trame — mais rappeler
+`find_rf_packet` sans avoir cancellé la session précédente ne réarme rien, en
+silence. Symptôme : l'écoute continue du pont marche **une fois** puis s'arrête.
+Le labo et `find_frequency.py` cancellent déjà dans leur `finally` ; l'écoute du
+pont l'avait oublié. Le faux RM4 modélise désormais cette exigence, donc un test
+échoue si le cancel disparaît.
+
 **C'est un appareil WiFi qui dort — le piège le plus coûteux du projet.** Le
 premier paquet le réveille et se perd : 10 % de perte et 267 ms de pic sur un
 appareil endormi, 11 ms une fois réveillé. Conséquence : **tout timeout court
