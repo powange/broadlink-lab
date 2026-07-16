@@ -461,28 +461,71 @@ fixture dans `dev/fixtures/real_rf00234.json` et vérifiées par `dev/real_test.
   trames strictement identiques → **pas de compteur anti-rejeu** (§7). Le replay
   marchera, et le dernier octet est donc calculé, pas tiré au sort.
 
-### `sub8` k=0x55 est une signature MANTRA, pas une propriété de la RF00234
+### La Mantra RF00143 — second protocole, décodé à 48/48
 
-Une **Mantra RF00143** (autre modèle, capturée le 16/07/2026, figée dans
-`dev/fixtures/real_rf00143.json`) porte **exactement le même checksum** — alors
-que tout le reste diffère : timings `296/985 µs` contre `263/788`, trame de
-**48 bits** contre 64, disposition des bits sans rapport.
+Autre modèle Mantra, **51 captures réelles** figées dans
+`dev/fixtures/real_rf00143.json`, vérifiées par `dev/rf00143_test.py`. Une seule
+fonction (`model()` dans le test) explique **les 7 champs des 51 captures, sans
+exception**. Timings `296/985 µs` contre `263/788`, trame de **48 bits** contre
+64, disposition sans rapport — et zéro ligne de code spécifique. C'est le
+garde-fou du projet : ce test échoue si l'outil redevient spécifique à un appareil.
 
-Et ce n'est pas tout ce qu'elles partagent :
+| bits | champ | valeurs |
+|---|---|---|
+| 0-15 | préambule + ID | `0xAB 0xB2` — constant |
+| 16-17 | mode moteur | `00` normal, `01` nuit, `10` éco |
+| 18 | reverse | |
+| 19-23 | **CCT** | 4→24 (3000→5000 K par pas de **100** — 21 teintes) |
+| 24 | lumière on/off | |
+| 25-27 | **vitesse** | **0 = éteint**, 1-6, **7 = éco** |
+| 28-31 | luminosité | 2-11 |
+| 32-35 | timer | 1h→1, 2h→2, 4h→4, 8h→8 |
+| 36-39 | code de commande | décoratif |
+| 40-47 | checksum | `sub8` k=0x55 |
+
+### Ce qui se transfère d'une Mantra à l'autre — et ce qui ne se transfère pas
 
 | | RF00234 | RF00143 |
 |---|---|---|
 | checksum | `sub8` k=0x55 | **identique** |
 | luminosité | `lum10 → 2` … `lum100 → 11` | **identique** |
-| extinction | le niveau garde sa valeur, seul le bit d'alimentation tombe | **identique** |
-| bit d'alimentation | 32 | 24 |
+| mode moteur | `00` normal, `01` nuit, `10` éco | **identique** |
 | octet de commande | oui, décoratif | oui, décoratif |
+| lampe éteinte | garde son niveau, bit 32 tombe | garde son niveau, bit 24 tombe |
+| **ventilo éteint** | **garde sa vitesse, bit 40 tombe** | **PAS de bit d'alim : vitesse = 0** |
 
-**Conséquence pratique : sur la prochaine télécommande Mantra, essayer `sub8`
-k=0x55 en premier.** Le piège n°1 se résout avant même d'avoir capturé.
+**Sur la prochaine Mantra, essayer `sub8` k=0x55 en premier** : le piège n°1 se
+résout avant d'avoir capturé.
 
-Ces deux protocoles servent de garde-fou : `dev/rf00143_test.py` échoue si l'outil
-redevient spécifique à un seul appareil.
+**Mais la symétrie « un bit d'alimentation par organe » de §10 n'est PAS une
+loi.** Sur la RF00143, le ventilateur n'a pas de bit d'alimentation : « éteint »
+s'écrit « vitesse 0 », et la vitesse est **perdue** — vérifié à v3 et à v6. La
+lampe, sur la **même** télécommande, respecte pourtant la règle. Deux organes,
+deux conventions. La symétrie reste une bonne hypothèse de départ ; ce n'est
+qu'une hypothèse.
+
+L'éco est encodé **deux fois** : bits 16-17 à `10`, *et* le champ vitesse écrasé
+à 7 quelle que soit la vitesse réelle (vérifié à v1 et à v4). Qui génère une
+trame éco doit poser les deux.
+
+**Reste ouvert :** le timer donne `1/2/4/8`, ce qui colle aussi bien à un
+compteur d'heures sur 4 bits (3 h, 5 h, 15 h seraient alors possibles) qu'à
+quatre bits indépendants. Aucune capture ne peut trancher — la télécommande n'a
+pas le bouton. **L'outil, si : générer `timer=3` et regarder.** C'est exactement
+comme ça que le timer de la RF00234 a livré ses pas de 2 minutes.
+
+### Le piège que ce protocole a révélé dans l'outil
+
+`fan` et `speed` s'y partagent le champ [25,28), donc **aucun des deux ne
+l'explique seul**. « Déduire les champs » en concluait « une capture est mal
+étiquetée » — à tort, l'étiquetage était juste.
+
+Ce symptôme a **deux causes de signature formelle identique** : un champ partagé,
+ou un vrai étiquetage fautif (ce que la RF00234 a par ailleurs). **On ne peut pas
+les départager par corrélation** — testé, ça se trompe dans les deux sens (§
+docstring de `shared/infer.py`). D'où `infer.isolated_pairs` : deux captures qui
+ne diffèrent QUE par le paramètre en cause. Aucune heuristique, et c'est « ne
+fais varier qu'un seul paramètre à la fois » appliqué par la machine.
 
 ### Le checksum — trouvé
 
