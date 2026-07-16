@@ -39,9 +39,12 @@ window.confirm = () => true;
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// performance.now() et pas Date.now() : l'horloge murale SAUTE (resync NTP, et
+// sous WSL2 des écarts de ~30 s ont été mesurés). Un bond en avant fait expirer
+// le timeout instantanément — le test échoue sur un délai qui n'a pas eu lieu.
 const wait = async (fn, label, ms = 45000) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
+  const t0 = performance.now();
+  while (performance.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
   throw new Error('timeout: ' + label);
 };
 
@@ -126,12 +129,17 @@ check('lum20 → 0010 = 2', /lum <b class="mono">0010<\/b> = 2/.test(html));
 check('lum30 → 0011 = 3', /lum <b class="mono">0011<\/b> = 3/.test(html));
 
 // --- 6. générateur
-await wait(() => $('sliders').querySelector('input[type=range]'), 'sliders');
-const lumS = [...$('sliders').querySelectorAll('input[type=range]')].find(s => s.dataset.f === 'lum');
-check('slider lum borné à 2^4-1', lumS.max === '15');
-lumS.value = '7';
-lumS.dispatchEvent(new window.Event('input'));
-check('valeur du slider affichée', $('v-lum').textContent.includes('7'));
+await wait(() => $('sliders').querySelector('.btns, input[type=range]'), 'sliders');
+// lum n'a pas de bornes déclarées ici : 4 bits -> 0-15, donc 16 boutons.
+const lumG = $('sliders').querySelector('.btns[data-f="lum"]');
+check('lum : un bouton par valeur, 0 à 2^4-1', lumG?.querySelectorAll('button').length === 16,
+  lumG?.querySelectorAll('button').length + ' boutons');
+lumG.querySelector('button[data-v="7"]').dispatchEvent(
+  new window.MouseEvent('click', { bubbles: true, view: window }));
+check('valeur affichée', $('v-lum').textContent.includes('7'));
+check('un seul bouton actif à la fois',
+  [...lumG.querySelectorAll('button.on')].map(b => b.dataset.v).join(',') === '7',
+  [...lumG.querySelectorAll('button.on')].map(b => b.dataset.v).join(','));
 
 $('gen').dispatchEvent(new window.Event('click'));
 await wait(() => $('gen-out').querySelector('pre'), 'génération');

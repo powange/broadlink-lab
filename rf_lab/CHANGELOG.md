@@ -1,5 +1,22 @@
 # Journal des modifications
 
+## 0.4.4
+
+**Le générateur montre les valeurs plutôt que de les faire viser.** Un champ dont
+les valeurs tiennent en 4 bits rend un bouton par valeur — `mode` devient
+`[0][1][2]`. Au-delà, c'est encore un slider : `timer` sur 8 bits en ferait 256.
+
+Trois widgets, et le choix se fait sur ce que le champ **accepte** :
+
+| bornes | widget |
+|---|---|
+| 0-1 | interrupteur |
+| max ≤ 15 | un bouton par valeur |
+| au-delà | slider |
+
+Les bornes réelles comptent doublement ici : `lum` affiche 11 boutons (1 à 11) et
+pas 16, parce que la télécommande ne fait que ça.
+
 ## 0.4.3
 
 **Les champs qui ne valent que 0 ou 1 ont un interrupteur**, plus un slider à deux

@@ -44,21 +44,32 @@ const wait = async (fn, label, ms = 45000) => {
 let pass = 0, fail = 0;
 const check = (n, c, x = '') => { c ? pass++ : fail++; console.log(`  ${c ? '✓' : '✗'} ${n}${x ? '  — ' + x : ''}`); };
 
-await wait(() => $('sliders').querySelector('input[type=range]'), 'sliders');
+await wait(() => $('sliders').querySelector('.btns, input[type=range]'), 'sliders');
 
-// --- sliders bornés aux valeurs réelles, pas à la largeur des bits
+// --- le widget suit ce que le champ ACCEPTE : interrupteur si 0-1, un bouton
+//     par valeur si elles tiennent en 4 bits, slider au-delà.
 const sl = Object.fromEntries([...$('sliders').querySelectorAll('input[type=range]')]
   .map(s => [s.dataset.f, [s.min, s.max]]));
 const sw = Object.fromEntries([...$('sliders').querySelectorAll('.switch input')]
   .map(c => [c.dataset.f, c.checked]));
-check('un slider par champ à plus de deux valeurs, const exclus',
-  Object.keys(sl).sort().join(',') === 'cct,lum,mode,speed,timer', Object.keys(sl).join(','));
+const bt = Object.fromEntries([...$('sliders').querySelectorAll('.btns')]
+  .map(g => [g.dataset.f, [...g.querySelectorAll('button')].map(b => +b.dataset.v)]));
 check('un interrupteur pour les champs qui ne valent que 0 ou 1',
   Object.keys(sw).sort().join(',') === 'fan,light,reverse', Object.keys(sw).join(','));
-check('lum borné 1-11, pas 0-15 (bornes réelles)', sl.lum?.join('-') === '1-11', sl.lum?.join('-'));
-check('cct borné 1-7', sl.cct?.join('-') === '1-7', sl.cct?.join('-'));
-check('speed borné 1-8', sl.speed?.join('-') === '1-8', sl.speed?.join('-'));
-check('timer 0-255 (8 bits, pas seulement 1/2/4/8 h)', sl.timer?.join('-') === '0-255', sl.timer?.join('-'));
+check('des boutons pour les champs à peu de valeurs',
+  Object.keys(bt).sort().join(',') === 'cct,lum,mode,speed', Object.keys(bt).join(','));
+check('un slider seulement au-delà de 15', Object.keys(sl).join(',') === 'timer',
+  Object.keys(sl).join(','));
+
+// Les bornes RÉELLES, pas la largeur des bits : sans elles lum irait de 0 à 15
+// alors que la télécommande ne fait que 1 à 11.
+check('lum : boutons 1 à 11, pas 0 à 15',
+  bt.lum?.join(',') === '1,2,3,4,5,6,7,8,9,10,11', bt.lum?.join(','));
+check('cct : boutons 1 à 7', bt.cct?.join(',') === '1,2,3,4,5,6,7', bt.cct?.join(','));
+check('speed : boutons 1 à 8', bt.speed?.join(',') === '1,2,3,4,5,6,7,8', bt.speed?.join(','));
+check('mode : boutons 0 à 2', bt.mode?.join(',') === '0,1,2', bt.mode?.join(','));
+check('timer reste un slider 0-255 (8 bits, pas seulement 1/2/4/8 h)',
+  sl.timer?.join('-') === '0-255', sl.timer?.join('-'));
 
 // L'interrupteur doit être LU à la génération. sliderValues() ne ramassait que
 // les input[type=range] : un booléen basculé n'aurait rien changé à la trame, en

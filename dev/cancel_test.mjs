@@ -26,9 +26,12 @@ window.URL.createObjectURL = () => 'blob:stub';
 
 const $ = (id) => window.document.getElementById(id);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+// performance.now() et pas Date.now() : l'horloge murale SAUTE (resync NTP, et
+// sous WSL2 des écarts de ~30 s ont été mesurés). Un bond en avant fait expirer
+// le timeout instantanément — le test échoue sur un délai qui n'a pas eu lieu.
 const wait = async (fn, label, ms = 45000) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
+  const t0 = performance.now();
+  while (performance.now() - t0 < ms) { if (fn()) return true; await sleep(60); }
   throw new Error('timeout: ' + label);
 };
 let pass = 0, fail = 0;
@@ -54,7 +57,7 @@ const dup = await fetch(new URL('api/capture/start', BASE), { method: 'POST' });
 check('capture concurrente refusée en 409', dup.status === 409, `HTTP ${dup.status}`);
 
 // --- annule via le bouton
-const t0 = Date.now();
+const t0 = performance.now();
 $('cap-cancel').dispatchEvent(new window.Event('click'));
 await wait(() => /annulée/i.test($('cap-msg').textContent), 'annulation');
 const ms = performance.now() - t0;

@@ -116,6 +116,11 @@
   .switch input:checked + i { background: var(--ok); }
   .switch input:checked + i::before { transform: translateX(18px); background: #fff; }
   .switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Peu de valeurs : un bouton par valeur. On voit d'un coup ce que le champ
+     accepte et où on en est — un slider oblige à viser puis à lire le chiffre. */
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  .btns button { padding: 3px 0; width: 30px; font-size: 12px; color: var(--dim); }
+  .btns button.on { background: var(--accent); border-color: var(--accent); color: #04121f; font-weight: 600; }
 </style>
 </head>
 <body>
@@ -326,10 +331,11 @@ const width = (f) => f.end - f.start;
    jamais, et ferait exploser le produit cartésien de l'export. */
 const maxOf = (f) => f.max != null ? f.max : Math.pow(2, width(f)) - 1;
 const minOf = (f) => f.min != null ? f.min : 0;
-// Un champ qui ne peut valoir que 0 ou 1 : sur les bornes, pas sur la largeur.
-// Un champ de 2 bits borné à 0-1 est un booléen ; un bit unique dont les bornes
-// disent 0-1 aussi. C'est ce que le champ ACCEPTE qui décide de son widget.
+// Le widget d'un champ se décide sur ce qu'il ACCEPTE, pas sur sa largeur en
+// bits : un champ de 2 bits borné à 0-1 est un booléen autant qu'un bit unique.
 const isBool = (f) => minOf(f) === 0 && maxOf(f) === 1;
+// Assez peu de valeurs pour les montrer toutes (16 au plus, soit 4 bits pleins).
+const isSmall = (f) => maxOf(f) <= 15;
 /* Les champs énumérables : ni le CRC (recalculé), ni les const (préambule, ID,
    bits de contexte — décoratifs, cf. §10). */
 const dataFields = () => S.fields.filter(f => f.role !== 'crc' && f.role !== 'const');
@@ -1005,6 +1011,15 @@ function renderSliders() {
         <span class="mono" id="v-${esc(f.name)}">${val ? 'on' : 'off'}</span>
       </div>`;
     }
+    if (isSmall(f)) {
+      let bs = '';
+      for (let i = minOf(f); i <= maxOf(f); i++)
+        bs += `<button type="button" data-v="${i}"${i === val ? ' class="on"' : ''}>${i}</button>`;
+      return `<div class="slider-row">${head}
+        <div class="btns" data-f="${esc(f.name)}">${bs}</div>
+        <span class="mono" id="v-${esc(f.name)}">${val} <span class="dim">/ ${maxOf(f)}</span></span>
+      </div>`;
+    }
     return `<div class="slider-row">${head}
       <input type="range" data-f="${esc(f.name)}" min="${minOf(f)}" max="${maxOf(f)}"
              value="${val}">
@@ -1019,12 +1034,28 @@ function renderSliders() {
   box.querySelectorAll('.switch input').forEach(c => {
     c.onchange = () => { $('v-' + c.dataset.f).textContent = c.checked ? 'on' : 'off'; };
   });
+  box.querySelectorAll('.btns').forEach(g => {
+    g.onclick = (ev) => {
+      const b = ev.target.closest('button');
+      if (!b) return;
+      g.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      $('v-' + g.dataset.f).innerHTML =
+        `${b.dataset.v} <span class="dim">/ ${maxOf(S.fields.find(f => f.name === g.dataset.f))}</span>`;
+    };
+  });
 }
 
+// Les trois widgets doivent être ramassés ici. En oublier un ne casse rien de
+// visible : le champ part à la valeur de la référence, la trame se vérifie, le
+// bouton « Émettre » reste vert — et c'est l'appareil qui n'obéit pas.
 function sliderValues() {
   const v = {};
   $('sliders').querySelectorAll('input[type=range]').forEach(s => { v[s.dataset.f] = +s.value; });
   $('sliders').querySelectorAll('.switch input').forEach(c => { v[c.dataset.f] = c.checked ? 1 : 0; });
+  $('sliders').querySelectorAll('.btns').forEach(g => {
+    const on = g.querySelector('button.on');
+    if (on) v[g.dataset.f] = +on.dataset.v;
+  });
   return v;
 }
 
