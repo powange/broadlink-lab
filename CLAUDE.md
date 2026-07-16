@@ -503,7 +503,7 @@ garde-fou du projet : ce test échoue si l'outil redevient spécifique à un app
 | 25-27 | **vitesse** | **0 = éteint**, 1-6, **7 = éco** |
 | 28-31 | luminosité | 2-11 |
 | 32-35 | timer | 1h→1, 2h→2, 4h→4, 8h→8 |
-| 36-39 | code de commande | décoratif — **vérifié sur le matériel** |
+| 36-39 | **code de commande** | **PAS décoratif** — commande le bloc ventilo |
 | 40-47 | checksum | `sub8` k=0x55 |
 
 ### Ce qui se transfère d'une Mantra à l'autre — et ce qui ne se transfère pas
@@ -531,11 +531,42 @@ L'éco est encodé **deux fois** : bits 16-17 à `10`, *et* le champ vitesse éc
 à 7 quelle que soit la vitesse réelle (vérifié à v1 et à v4). Qui génère une
 trame éco doit poser les deux.
 
-**L'octet de commande est décoratif ici aussi** (vérifié le 16/07/2026 : la
-lampe obéit quelle que soit la valeur de `cmd`). La trame reste donc **absolue** —
-une seule trame par état, comme sur la RF00234. Les codes observés disent quand
-même quel bouton a été pressé : `1` lumière off, `2` ventilo off, `3` luminosité,
-`4` lumière on, `5` CCT, `10` vitesse, `12` reverse, `13` mode, `14` timer.
+### L'octet de commande N'EST PAS décoratif — contrairement à la RF00234
+
+C'est la différence la plus importante entre les deux modèles, et elle vaut
+contre-exemple : ce qui est vrai d'une Mantra ne l'est pas de l'autre.
+
+Établi par un 2×2 sur le matériel (16/07/2026), ventilateur à l'arrêt au départ :
+
+| | `cmd=4` (bloc lampe) | `cmd=10` (bloc ventilo) |
+|---|---|---|
+| **bloc lampe** (light, cct, lum) | appliqué | appliqué |
+| **bloc ventilo** (speed) | **IGNORÉ** | appliqué |
+
+**Le bloc lampe s'applique toujours ; le bloc ventilateur seulement si `cmd` est
+une commande ventilateur.** Asymétrique, mais c'est ce que fait le matériel. Les
+codes se regroupent d'ailleurs par bloc, ce qui corrobore :
+
+- bloc lampe : `1` lumière off, `3` luminosité, `4` lumière on, `5` CCT ;
+- bloc ventilo : `2` ventilo off, `10` vitesse, `12` reverse, `13` mode, `14` timer.
+
+**Conséquence pratique : générer avec `cmd=10`.** Il applique le bloc lampe ET la
+vitesse — donc un état complet en une seule trame, `speed=0` compris, qui arrête
+le ventilateur (`cmd=2` est inutile). La référence par défaut doit donc être une
+capture à `cmd=10`, puisqu'un champ omis garde la valeur de la référence.
+
+**Reste ouvert :** `cmd=10` applique-t-il aussi `reverse`, `mode` et `timer`, ou
+chacun exige-t-il son code (12, 13, 14) ? Si oui, changer vitesse + reverse
+demande deux trames, et le profil devra le porter.
+
+**Je me suis trompé trois fois de suite sur ce champ, de la même façon :**
+
+1. « décoratif » par analogie avec la RF00234, sans aucun test ;
+2. « décoratif, vérifié sur le matériel » — après un test qui ne portait que sur
+   la LAMPE, c'est-à-dire précisément le seul bloc qui s'applique toujours ;
+3. le test qui a tranché ne fait varier qu'**un** paramètre à la fois (`cmd`
+   seul, `speed` constant). C'est la méthode du projet, écrite en §9, et je ne
+   l'ai appliquée qu'en troisième.
 
 **Reste ouvert :** le timer donne `1/2/4/8`, ce qui colle aussi bien à un
 compteur d'heures sur 4 bits (3 h, 5 h, 15 h seraient alors possibles) qu'à
