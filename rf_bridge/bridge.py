@@ -193,9 +193,24 @@ class Device:
                 "via_device": "rf_bridge"}
 
     # ---- émission
-    def emit(self):
+    def emit(self, applying=None):
         """
-        Fabrique la trame de l'état COURANT et l'émet.
+        Émet le ou les trames qui appliquent l'état courant.
+
+        UNE trame ne suffit pas toujours. Sur un récepteur à `requires` (Mantra
+        R00143), elle porte tout l'état mais l'appareil n'en retient que les
+        champs libres plus celui que l'octet de commande désigne : régler vitesse
+        ET sens en demande deux. `applying` limite l'émission aux champs qui
+        changent vraiment, pour ne pas émettre quatre trames là où une suffit.
+        """
+        ok = True
+        for req in profile_mod.emit_groups(self.p, applying):
+            ok = self._emit_one(req) and ok
+        return ok
+
+    def _emit_one(self, require=None):
+        """
+        Fabrique UNE trame de l'état courant, sous contrainte, et l'émet.
 
         On repart toujours de la capture de référence : elle porte le préambule
         et l'ID appairé, qu'on ne doit jamais reconstruire (§3.2 / §7).
@@ -210,6 +225,18 @@ class Device:
                 bits = decoder.set_field(bits, f["start"], f["end"],
                                          int(self.state[f["name"]]),
                                          f.get("msb_first", True))
+        # La contrainte prime, et elle écrit MÊME un champ `const` : l'octet de
+        # commande est constant du point de vue de l'état — il ne décrit rien de
+        # l'appareil — mais c'est lui qui décide de ce que le récepteur applique.
+        for name, val in (require or {}).items():
+            t = next((x for x in self.fields if x["name"] == name), None)
+            if t is None:
+                log.error("[%s] requires -> champ « %s » absent de la carte",
+                          self.id, name)
+                return False
+            bits = decoder.set_field(bits, t["start"], t["end"], int(val),
+                                     t.get("msb_first", True))
+
         crc = next((f for f in self.fields if f.get("role") == "crc"), None)
         ck = self.p.get("checksum") or {"kind": "none"}
         if crc and ck.get("kind", "none") != "none":
@@ -228,7 +255,8 @@ class Device:
                                      pkt.get("terminator", True))
         try:
             get_device().send_data(data)
-            log.info("[%s] émis -> %s", self.id, self.state)
+            log.info("[%s] émis%s -> %s", self.id,
+                     " " + repr(require) if require else "", self.state)
             return True
         except Exception as exc:              # noqa: BLE001
             log.exception("[%s] émission impossible : %s", self.id, exc)
@@ -237,9 +265,16 @@ class Device:
     def apply(self, changes):
         """Applique des valeurs brutes, émet, republie l'état."""
         with self.lock:
+            # Un champ toggle ne se RÈGLE pas, il se BASCULE : le récepteur
+            # ignore sa valeur et inverse à chaque trame. En émettre une alors
+            # que HA redemande le sens courant inverserait le ventilateur pour
+            # rien. On ne l'applique donc que s'il change vraiment.
+            tog = set(profile_mod.toggles(self.p))
+            applying = [k for k, v in changes.items()
+                        if k not in tog or self.state.get(k) != v]
             self.state.update(changes)
             self._save_state()
-            self.emit()
+            self.emit(applying)
         self.publish_state()
 
     # ---- discovery + état
@@ -524,8 +559,11 @@ class Bridge:
                     d.state.update({k: v for k, v in old.items() if k in d.state})
                 self.devices[did] = d
                 if self.connected:
-                    d.publish_discovery()
+                    # s'abonner AVANT d'annoncer : HA peut envoyer une
+                    # commande dès qu'il voit la discovery, et sans abonnement
+                    # elle tombe dans le vide, en silence.
                     d.subscribe()
+                    d.publish_discovery()
                     d.publish_state()
                 changed.append(f"+{did}")
 
@@ -699,8 +737,8 @@ def main():
         bridge.connected = True
         c.publish(f"{BASE}/status", "online", retain=True)
         for d in bridge.devices.values():
+            d.subscribe()          # avant la discovery : cf. Bridge.reload
             d.publish_discovery()
-            d.subscribe()
             d.publish_state()
 
     def on_disconnect(c, u, flags, rc, props=None):

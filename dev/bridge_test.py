@@ -352,6 +352,89 @@ def main():
                        "retrait du fichier détecté", 25)
         check("un fichier supprimé retire l'appareil de HA", got)
 
+        # ---- profil v2 : `requires` et `semantics` sur du VRAI signal R00143.
+        # Le récepteur de cette télécommande n'applique que les champs libres
+        # plus UN champ désigné par l'octet de commande (CLAUDE.md §10). Régler
+        # vitesse ET sens y demande deux trames — c'est ce qu'on vérifie ici,
+        # bout en bout, trames décodées par le faux RM4.
+        fix = json.load(open(os.path.join(HERE, "fixtures", "real_rf00143.json")))
+        flower = {
+            "version": 2,
+            "device": {"id": "flower", "name": "Mantra Flower",
+                       "manufacturer": "Mantra", "model": "R00143"},
+            "rf": {"frequency": 433.92, "gap": fix["expected"]["gap"],
+                   "reference_b64": fix["captures"][0]["b64"]},
+            "fields": [
+                {"name": "id", "start": 0, "end": 16, "role": "const"},
+                {"name": "mode", "start": 16, "end": 18, "role": "data",
+                 "min": 0, "max": 2, "requires": {"cmd": 13}},
+                {"name": "reverse", "start": 18, "end": 19, "role": "data",
+                 "min": 0, "max": 1, "requires": {"cmd": 12}, "semantics": "toggle"},
+                {"name": "cct", "start": 19, "end": 24, "role": "data", "min": 4, "max": 24},
+                {"name": "light", "start": 24, "end": 25, "role": "data", "min": 0, "max": 1},
+                {"name": "speed", "start": 25, "end": 28, "role": "data",
+                 "min": 0, "max": 7, "requires": {"cmd": 10}},
+                {"name": "lum", "start": 28, "end": 32, "role": "data", "min": 2, "max": 11},
+                {"name": "timer", "start": 32, "end": 36, "role": "data",
+                 "min": 0, "max": 8, "requires": {"cmd": 14}},
+                {"name": "cmd", "start": 36, "end": 40, "role": "const"},
+                {"name": "crc", "start": 40, "end": 48, "role": "crc"},
+            ],
+            "checksum": {"kind": "sub8", "k": 0x55},
+            "entities": [
+                {"type": "light", "id": "light", "name": "Lumière", "power": "light",
+                 "brightness": {"field": "lum", "min": 2, "max": 11}},
+                {"type": "fan", "id": "fan", "name": "Ventilateur", "power": "light",
+                 "percentage": {"field": "speed", "min": 0, "max": 7},
+                 "direction": "reverse"},
+            ],
+        }
+        with open(os.path.join(PROFILE_DIR, "flower.json"), "w") as fh:
+            json.dump(flower, fh)
+        got = wait_for(lambda: any("/flower/" in t and t.endswith("/config") for t in seen),
+                       "profil v2 détecté", 25)
+        check("un profil v2 se charge", got)
+
+        def flower_frames():
+            buf.extend(log_lines())
+            return [l for l in buf if "[flower] émis" in l]
+
+        # une commande du bloc lampe : UNE trame, sans contrainte
+        n = len(flower_frames())
+        cli.publish("rf_bridge/flower/light/set", json.dumps({"state": "ON"}))
+        wait_for(lambda: len(flower_frames()) > n, "trame lampe")
+        f = flower_frames()[n:]
+        check("bloc lampe -> une seule trame, sans contrainte",
+              len(f) == 1 and "{'cmd'" not in f[0], f"{len(f)} trame(s)")
+
+        # une commande de vitesse : UNE trame, mais contrainte à cmd=10
+        n = len(flower_frames())
+        cli.publish("rf_bridge/flower/fan/pct/set", "5")
+        wait_for(lambda: len(flower_frames()) > n, "trame vitesse")
+        f = flower_frames()[n:]
+        check("vitesse -> une trame portant cmd=10",
+              len(f) == 1 and "{'cmd': 10}" in f[0], "".join(x[-70:] for x in f))
+
+        # LE test : le sens exige cmd=12, donc sa propre trame
+        n = len(flower_frames())
+        cli.publish("rf_bridge/flower/fan/dir/set", "reverse")
+        wait_for(lambda: len(flower_frames()) > n, "trame sens")
+        f = flower_frames()[n:]
+        check("sens -> une trame portant cmd=12", any("{'cmd': 12}" in x for x in f),
+              "".join(x[-70:] for x in f))
+
+        # Le toggle : redemander le MÊME sens ne doit RIEN émettre. Le récepteur
+        # ignore le bit et bascule : une trame de plus inverserait le ventilo.
+        n = len(flower_frames())
+        cli.publish("rf_bridge/flower/fan/dir/set", "reverse")
+        time.sleep(1.5)
+        buf.extend(log_lines())
+        check("redemander le sens courant n'émet RIEN (sinon ça l'inverserait)",
+              len(flower_frames()) == n, f"{len(flower_frames()) - n} trame(s) de trop")
+
+        # et le faux RM4 confirme que la contrainte a bien écrit `cmd` dans les bits
+        code, st = ui("/api/status")
+
         # ---- l'IP du Broadlink se règle depuis l'UI du pont aussi
         code, st = ui("/api/status")
         check("le pont expose l'IP et sa provenance",

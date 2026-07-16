@@ -1,5 +1,31 @@
 # Journal des modifications
 
+## 0.4.0
+
+**Profils v2 : `requires` et `semantics`.** Le pont supposait qu'une trame porte
+l'état et que l'appareil l'applique en entier. C'est vrai de la Mantra RF00234 —
+et faux de la Mantra R00143, dont le récepteur n'applique que les champs libres
+plus **un** champ désigné par l'octet de commande.
+
+Deux notions, que les bits ne disent pas et que seul le matériel révèle :
+
+- **`requires`** — « ce champ ne s'applique que si `cmd` vaut 10 ». Régler
+  vitesse *et* sens émet donc deux trames. Les champs libres (le bloc lampe)
+  voyagent gratuitement avec chacune : inutile de leur en dédier une.
+- **`semantics: toggle`** — le récepteur **ignore** la valeur du champ et
+  bascule. Redemander le sens courant n'émet donc rien : une trame « pour rien »
+  inverserait le ventilateur.
+
+Les profils v1 restent lisibles et se comportent comme avant. Un profil v2 est
+**refusé** par un pont trop ancien, plutôt que d'être appliqué de travers en
+silence.
+
+**Correction : le pont s'abonne avant d'annoncer.** Il publiait la discovery puis
+s'abonnait aux topics de commande. Home Assistant, qui envoie volontiers une
+commande dès qu'il découvre une entité, tombait dans cette fenêtre — et la
+commande était perdue sans le moindre message.
+
+
 ## 0.3.1
 
 **L'UI démarre même sans broker MQTT.** La boucle de connexion tournait dans le

@@ -99,7 +99,7 @@ await wait(() => $('exp-out').querySelector('pre'), 'profil construit');
 const prof = JSON.parse($('exp-out').querySelector('pre').textContent);
 fs.writeFileSync(OUT, JSON.stringify(prof, null, 2));
 
-check('profil versionné', prof.version === 1);
+check('profil versionné', prof.version === 2, prof.version);
 check('appareil identifié', prof.device.id === 'mantra_nenufar'
   && prof.device.manufacturer === 'Mantra' && prof.device.model === 'RF00234');
 check('la référence voyage dans le profil (elle porte l\'ID appairé)',
