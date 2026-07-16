@@ -1,5 +1,14 @@
 # Journal des modifications
 
+## 0.4.3
+
+**Les champs qui ne valent que 0 ou 1 ont un interrupteur**, plus un slider à deux
+crans dont il fallait lire le chiffre à côté pour savoir s'il était mis.
+
+Le critère est ce que le champ **accepte** (bornes 0-1), pas sa largeur en bits :
+un champ de 2 bits borné à 0-1 est un booléen, et un bit unique aux bornes 0-1
+aussi.
+
 ## 0.4.2
 
 **« Déduire les champs » n'accuse plus ton étiquetage à tort.**

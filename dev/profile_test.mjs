@@ -49,13 +49,34 @@ await wait(() => $('sliders').querySelector('input[type=range]'), 'sliders');
 // --- sliders bornés aux valeurs réelles, pas à la largeur des bits
 const sl = Object.fromEntries([...$('sliders').querySelectorAll('input[type=range]')]
   .map(s => [s.dataset.f, [s.min, s.max]]));
-check('un slider par champ data, const exclus',
-  Object.keys(sl).sort().join(',') === 'cct,fan,light,lum,mode,reverse,speed,timer',
-  Object.keys(sl).join(','));
+const sw = Object.fromEntries([...$('sliders').querySelectorAll('.switch input')]
+  .map(c => [c.dataset.f, c.checked]));
+check('un slider par champ à plus de deux valeurs, const exclus',
+  Object.keys(sl).sort().join(',') === 'cct,lum,mode,speed,timer', Object.keys(sl).join(','));
+check('un interrupteur pour les champs qui ne valent que 0 ou 1',
+  Object.keys(sw).sort().join(',') === 'fan,light,reverse', Object.keys(sw).join(','));
 check('lum borné 1-11, pas 0-15 (bornes réelles)', sl.lum?.join('-') === '1-11', sl.lum?.join('-'));
 check('cct borné 1-7', sl.cct?.join('-') === '1-7', sl.cct?.join('-'));
 check('speed borné 1-8', sl.speed?.join('-') === '1-8', sl.speed?.join('-'));
 check('timer 0-255 (8 bits, pas seulement 1/2/4/8 h)', sl.timer?.join('-') === '0-255', sl.timer?.join('-'));
+
+// L'interrupteur doit être LU à la génération. sliderValues() ne ramassait que
+// les input[type=range] : un booléen basculé n'aurait rien changé à la trame, en
+// silence — et le bouton « Émettre » serait resté vert.
+const lightSw = [...$('sliders').querySelectorAll('.switch input')].find(c => c.dataset.f === 'light');
+const was = lightSw.checked;
+lightSw.checked = !was;
+lightSw.dispatchEvent(new window.Event('change'));
+check("l'étiquette suit l'interrupteur", $('v-light').textContent === (was ? 'off' : 'on'),
+  $('v-light').textContent);
+$('gen').dispatchEvent(new window.Event('click'));
+await wait(() => $('gen-out').querySelector('pre'), 'génération');
+const genBits = $('gen-out').querySelector('pre .diff').textContent;
+// bit 32 = alimentation de la lampe (§10)
+check("basculer l'interrupteur change bien le bit 32 de la trame générée",
+  genBits[32] === (was ? '0' : '1'), `bit32=${genBits[32]}, interrupteur ${!was}`);
+lightSw.checked = was;
+lightSw.dispatchEvent(new window.Event('change'));
 
 // --- construction du profil : le livrable du labo
 $('d-name').value = 'Mantra Nenufar';

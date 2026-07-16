@@ -104,6 +104,18 @@
   dialog::backdrop { background: rgba(0,0,0,.6); }
   .slider-row { display: grid; grid-template-columns: 90px 1fr 78px; gap: 10px; align-items: center; margin-bottom: 8px; }
   .slider-row input[type=range] { width: 100%; }
+  /* Un champ qui ne vaut que 0 ou 1 : un slider à deux crans ne dit pas s'il
+     est mis, il faut lire le chiffre à côté. L'interrupteur, si. */
+  .switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+  .switch i { position: absolute; inset: 0; background: var(--line); border-radius: 22px; transition: background .15s; pointer-events: none; }
+  .switch i::before {
+    content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
+    background: var(--dim); border-radius: 50%; transition: transform .15s, background .15s;
+  }
+  .switch input:checked + i { background: var(--ok); }
+  .switch input:checked + i::before { transform: translateX(18px); background: #fff; }
+  .switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
 </style>
 </head>
 <body>
@@ -314,6 +326,10 @@ const width = (f) => f.end - f.start;
    jamais, et ferait exploser le produit cartésien de l'export. */
 const maxOf = (f) => f.max != null ? f.max : Math.pow(2, width(f)) - 1;
 const minOf = (f) => f.min != null ? f.min : 0;
+// Un champ qui ne peut valoir que 0 ou 1 : sur les bornes, pas sur la largeur.
+// Un champ de 2 bits borné à 0-1 est un booléen ; un bit unique dont les bornes
+// disent 0-1 aussi. C'est ce que le champ ACCEPTE qui décide de son widget.
+const isBool = (f) => minOf(f) === 0 && maxOf(f) === 1;
 /* Les champs énumérables : ni le CRC (recalculé), ni les const (préambule, ID,
    bits de contexte — décoratifs, cf. §10). */
 const dataFields = () => S.fields.filter(f => f.role !== 'crc' && f.role !== 'const');
@@ -980,10 +996,18 @@ function renderSliders() {
   const ref = S.rows.find(r => r.id === S.refId);
   box.innerHTML = data.map(f => {
     const cur = ref?.bits ? fieldValue(ref.bits, f.start, f.end, f.msb_first !== false) : minOf(f);
-    return `<div class="slider-row">
-      <label style="margin:0">${esc(f.name)} <span class="dim">${width(f)}b</span></label>
+    const val = Math.min(Math.max(cur, minOf(f)), maxOf(f));
+    const head = `<label style="margin:0">${esc(f.name)} <span class="dim">${width(f)}b</span></label>`;
+    if (isBool(f)) {
+      return `<div class="slider-row">${head}
+        <label class="switch"><input type="checkbox" data-f="${esc(f.name)}"
+          ${val ? 'checked' : ''}><i></i></label>
+        <span class="mono" id="v-${esc(f.name)}">${val ? 'on' : 'off'}</span>
+      </div>`;
+    }
+    return `<div class="slider-row">${head}
       <input type="range" data-f="${esc(f.name)}" min="${minOf(f)}" max="${maxOf(f)}"
-             value="${Math.min(Math.max(cur, minOf(f)), maxOf(f))}">
+             value="${val}">
       <span class="mono" id="v-${esc(f.name)}">${cur} <span class="dim">/ ${maxOf(f)}</span></span>
     </div>`;
   }).join('');
@@ -992,11 +1016,15 @@ function renderSliders() {
       $('v-' + s.dataset.f).innerHTML = `${s.value} <span class="dim">/ ${maxOf(S.fields.find(f => f.name === s.dataset.f))}</span>`;
     };
   });
+  box.querySelectorAll('.switch input').forEach(c => {
+    c.onchange = () => { $('v-' + c.dataset.f).textContent = c.checked ? 'on' : 'off'; };
+  });
 }
 
 function sliderValues() {
   const v = {};
   $('sliders').querySelectorAll('input[type=range]').forEach(s => { v[s.dataset.f] = +s.value; });
+  $('sliders').querySelectorAll('.switch input').forEach(c => { v[c.dataset.f] = c.checked ? 1 : 0; });
   return v;
 }
 

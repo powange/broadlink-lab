@@ -356,6 +356,29 @@ absent alors qu'il est là — le routeur va jusqu'à répondre
 `dev/find_rm4.py` attend 6 s par adresse pour cette raison : **ne pas baisser
 cette valeur.** Devant un échec réseau, réessayer avant de conclure.
 
+**Un récepteur muet n'est pas un problème logiciel.** Sur la Mantra Flower
+(R00143), toutes les émissions ont été ignorées : trames justes, checksum bon,
+paquets acceptés par le RM4, et rien. Ce n'était ni la carte, ni la fréquence, ni
+la portée — **l'antenne du récepteur était coincée sous le bloc d'alimentation**
+du ventilateur. La faire passer par-dessus a tout réglé.
+
+Deux leçons, payées cher :
+
+- **Une télécommande à écran affiche son état qu'elle soit écoutée ou non.** On
+  peut donc étiqueter 51 captures en regardant l'écran, décoder le protocole
+  entier, et n'avoir aucune preuve que l'appareil ait jamais reçu quoi que ce
+  soit. **Avant de chercher pourquoi une émission échoue, vérifier que la VRAIE
+  télécommande pilote l'appareil.** C'est dix secondes, et ça évite d'accuser la
+  bande ISM.
+- **« 433 MHz » sur une fiche produit est une bande** (433,05–434,79), pas une
+  fréquence. Ça n'infirme ni ne confirme le 433,92 câblé en dur ici.
+  `dev/find_frequency.py` demande la vraie valeur au RM4 en balayant — à lancer
+  devant toute nouvelle télécommande, mais **après** avoir vérifié le lien.
+
+Au passage : la R00143 est bien en 433 MHz (revendeurs indépendants). Le piège
+`R00142`/`R00233` en 2,4 GHz ne s'y applique pas — le suffixe qui compte chez
+Mantra est le « RF » des fiches (« Nemo RF »), pas le préfixe de la référence.
+
 **Depuis WSL2, l'unicast passe, le broadcast non.** `--device <ip>` fonctionne
 parce que `broadlink.hello()` n'embarque pas l'IP locale dans son paquet (il met
 `0.0.0.0:0`, cf. `broadlink.scan`) : l'appareil répond à l'adresse source UDP,
@@ -480,7 +503,7 @@ garde-fou du projet : ce test échoue si l'outil redevient spécifique à un app
 | 25-27 | **vitesse** | **0 = éteint**, 1-6, **7 = éco** |
 | 28-31 | luminosité | 2-11 |
 | 32-35 | timer | 1h→1, 2h→2, 4h→4, 8h→8 |
-| 36-39 | code de commande | décoratif |
+| 36-39 | code de commande | décoratif — **vérifié sur le matériel** |
 | 40-47 | checksum | `sub8` k=0x55 |
 
 ### Ce qui se transfère d'une Mantra à l'autre — et ce qui ne se transfère pas
@@ -507,6 +530,12 @@ qu'une hypothèse.
 L'éco est encodé **deux fois** : bits 16-17 à `10`, *et* le champ vitesse écrasé
 à 7 quelle que soit la vitesse réelle (vérifié à v1 et à v4). Qui génère une
 trame éco doit poser les deux.
+
+**L'octet de commande est décoratif ici aussi** (vérifié le 16/07/2026 : la
+lampe obéit quelle que soit la valeur de `cmd`). La trame reste donc **absolue** —
+une seule trame par état, comme sur la RF00234. Les codes observés disent quand
+même quel bouton a été pressé : `1` lumière off, `2` ventilo off, `3` luminosité,
+`4` lumière on, `5` CCT, `10` vitesse, `12` reverse, `13` mode, `14` timer.
 
 **Reste ouvert :** le timer donne `1/2/4/8`, ce qui colle aussi bien à un
 compteur d'heures sur 4 bits (3 h, 5 h, 15 h seraient alors possibles) qu'à
