@@ -536,28 +536,34 @@ trame éco doit poser les deux.
 C'est la différence la plus importante entre les deux modèles, et elle vaut
 contre-exemple : ce qui est vrai d'une Mantra ne l'est pas de l'autre.
 
-Établi par un 2×2 sur le matériel (16/07/2026), ventilateur à l'arrêt au départ :
+Établi sur le matériel (16/07/2026), un paramètre à la fois :
 
-| | `cmd=4` (bloc lampe) | `cmd=10` (bloc ventilo) |
-|---|---|---|
-| **bloc lampe** (light, cct, lum) | appliqué | appliqué |
-| **bloc ventilo** (speed) | **IGNORÉ** | appliqué |
+| champ | appliqué quand |
+|---|---|
+| `light`, `cct`, `lum` | **toujours**, quel que soit `cmd` |
+| `speed` | seulement si `cmd=10` |
+| `reverse` | seulement si `cmd=12` |
+| `mode`, `timer` | **présumé** `13` et `14` — non vérifié |
 
-**Le bloc lampe s'applique toujours ; le bloc ventilateur seulement si `cmd` est
-une commande ventilateur.** Asymétrique, mais c'est ce que fait le matériel. Les
-codes se regroupent d'ailleurs par bloc, ce qui corrobore :
+`cmd` ne sélectionne pas un *bloc*, il sélectionne **le champ ventilateur** à
+appliquer : à `cmd=10`, `reverse` ne bouge pas ; à `cmd=12`, il bouge. Le bloc
+lampe, lui, voyage gratuitement avec n'importe quelle trame.
 
-- bloc lampe : `1` lumière off, `3` luminosité, `4` lumière on, `5` CCT ;
-- bloc ventilo : `2` ventilo off, `10` vitesse, `12` reverse, `13` mode, `14` timer.
+Les codes observés à la capture, cohérents avec ça : `1` lumière off, `3`
+luminosité, `4` lumière on, `5` CCT ; `2` ventilo off, `10` vitesse, `12`
+reverse, `13` mode, `14` timer.
 
-**Conséquence pratique : générer avec `cmd=10`.** Il applique le bloc lampe ET la
-vitesse — donc un état complet en une seule trame, `speed=0` compris, qui arrête
-le ventilateur (`cmd=2` est inutile). La référence par défaut doit donc être une
-capture à `cmd=10`, puisqu'un champ omis garde la valeur de la référence.
+**Conséquence lourde sur le livrable.** La trame n'est PAS absolue du point de vue
+du récepteur : elle porte l'état complet, mais il n'en applique que la lampe plus
+un champ ventilateur. Régler vitesse + sens + mode + timer demande donc **une
+trame par champ ventilateur modifié** (`cmd=2` reste inutile : `cmd=10` avec
+`speed=0` arrête le ventilateur). La lampe est gratuite : elle arrive avec la
+première.
 
-**Reste ouvert :** `cmd=10` applique-t-il aussi `reverse`, `mode` et `timer`, ou
-chacun exige-t-il son code (12, 13, 14) ? Si oui, changer vitesse + reverse
-demande deux trames, et le profil devra le porter.
+Le format de profil (`shared/profile.py`) ne sait pas exprimer ça — il suppose
+qu'une trame suffit, ce qui est vrai de la RF00234 et faux ici. Il lui faudra un
+`cmd` par champ, et au pont d'émettre autant de trames que de champs ventilateur
+changés.
 
 **Je me suis trompé trois fois de suite sur ce champ, de la même façon :**
 
