@@ -75,9 +75,11 @@ check('bool -> checkbox', $('c-reverse')?.type === 'checkbox');
 check('enum -> select avec les options', $('c-timer')?.tagName === 'SELECT' &&
   [...$('c-timer').options].map(o => o.value).join(',') === '0,1,2,4,8',
   [...($('c-timer')?.options || [])].map(o => o.value).join(','));
-check('tri proposé sur les 8 paramètres',
+// `name` et `seq` sont les deux tris qui ne viennent pas du schéma ; les autres
+// en sont générés, et suivent donc toute modification des paramètres d'état.
+check('tri proposé sur les 8 paramètres, + nom et ordre de capture',
   [...$('sort').options].map(o => o.value).join(',') ===
-    'name,light,lum,cct,fan,speed,reverse,mode,timer',
+    'name,seq,light,lum,cct,fan,speed,reverse,mode,timer',
   [...$('sort').options].map(o => o.value).join(','));
 
 // --- 3. nommage auto : on/off toujours présents, le reste au repos disparaît

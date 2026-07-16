@@ -1,5 +1,20 @@
 # Journal des modifications
 
+## 0.4.1
+
+**Tri par ordre de capture.** La grille se triait par nom ou par paramètre
+d'état ; elle sait maintenant rendre les captures dans l'ordre où tu les as
+faites. Utile pour retrouver la dernière, ou pour relire une session dans son
+déroulé.
+
+Les captures portent désormais leur date, visible en infobulle sur leur nom.
+Celles d'avant cette version n'en ont pas — l'infobulle le dit plutôt que
+d'inventer une date.
+
+Le tri chronologique ne s'appuie pas sur cette date, mais sur l'ordre du
+fichier de captures, qui est l'ordre d'enregistrement. Il marche donc aussi sur
+les captures d'avant, et une horloge qui saute ne le dérange pas.
+
 ## 0.4.0
 
 **Déduction automatique des champs.** Bouton « Déduire les champs » : l'outil

@@ -83,6 +83,28 @@ const lums = [...$('grid-wrap').querySelector('table.grid')
 check('tri par luminosité croissante',
   lums.every((v, i, a) => i === 0 || a[i - 1] <= v), `[${lums}]`);
 
+// --- 3bis. tri chronologique.
+// L'ordre du store EST l'ordre de capture (on append). Le tri « ordre de
+// capture » consiste donc à ne pas trier — ce qui marche aussi sur les captures
+// antérieures au champ `ts`, comme celles du seed.
+const names = () => [...$('grid-wrap').querySelector('table.grid')
+  .querySelectorAll('tbody tr .lbl .mono')].map(e => e.textContent);
+$('sort').value = 'seq';
+$('sort').dispatchEvent(new window.Event('change'));
+await sleep(200);
+const seq = names();
+const storeOrder = (await fetch(new URL('api/analyze?gap=2000', BASE)).then(r => r.json()))
+  .rows.map(r => r.name);
+check('tri chronologique = ordre du store',
+  JSON.stringify(seq) === JSON.stringify(storeOrder), `[${seq}]`);
+// Sans ça, le test passerait même si « ordre de capture » retriait par nom.
+check("l'ordre de capture diffère bien de l'alphabétique",
+  JSON.stringify(seq) !== JSON.stringify([...seq].sort()), `[${seq}]`);
+check('les captures du seed portent une infobulle « pas de date »',
+  /pas de date|avant que la date/.test($('grid-wrap')
+    .querySelector('table.grid tbody tr .lbl .mono').title),
+  $('grid-wrap').querySelector('table.grid tbody tr .lbl .mono').title);
+
 // --- 4. nommage d'un champ au clic-glisser
 const cell = (c) => $('grid-wrap').querySelector(`td.bit[data-col="${c}"]`);
 const mouse = (el, t) => el.dispatchEvent(new window.MouseEvent(t, { bubbles: true, view: window }));
@@ -140,6 +162,20 @@ await sleep(400);
 check('la nouvelle capture apparaît dans la grille',
   $('grid-wrap').querySelector('table.grid').querySelectorAll('tbody tr').length === 8,
   $('grid-wrap').querySelector('table.grid').querySelectorAll('tbody tr').length + ' lignes');
+
+// La dernière capturée doit être la dernière en ordre chronologique, et porter
+// une vraie date — c'est là que /api/captures a posé son `ts`.
+$('sort').value = 'seq';
+$('sort').dispatchEvent(new window.Event('change'));
+await sleep(200);
+const last = [...$('grid-wrap').querySelector('table.grid')
+  .querySelectorAll('tbody tr .lbl .mono')].pop();
+check('la capture live arrive en dernier en ordre chronologique',
+  /lum40/.test(last.textContent), last.textContent);
+// Pas de parsing de la date : toLocaleString dépend de la locale du runtime,
+// et un test qui suppose la sienne casse ailleurs pour rien.
+check('et porte une date réelle, pas le repli « pas de date »',
+  !/avant que la date/.test(last.title) && /\d/.test(last.title), last.title);
 
 // --- 9. métadonnées obligatoires (sans elles le diff ne veut rien dire, §6.2)
 $('c-lum').value = ''; $('c-cct').value = ''; $('c-speed').value = '';

@@ -240,6 +240,12 @@ def add_capture():
     store = load_store()
     store["captures"].append({
         "id": uuid.uuid4().hex[:8],
+        # time.time() et PAS time.monotonic() — à l'inverse de capture_worker.
+        # Ici on veut une date affichable ; là-bas c'était une durée, et
+        # l'horloge murale saute. Une horloge qui recule décale cet affichage,
+        # elle ne casse rien : le tri chronologique s'appuie sur l'ordre du
+        # store, pas sur ce champ.
+        "ts": time.time(),
         "name": body.get("name", "sans-nom"),
         "b64": body["b64"],
         "meta": body.get("meta", {}),   # {lum: 10, cct: 3000, speed: 0}
@@ -276,8 +282,12 @@ def api_analyze():
         agree = sum(1 for f in frames if f["bits"] == bits)
         bitmap[c["name"]] = bits
         t = frames[0].get("tail") if frames else None
+        # `rows` suit l'ordre du store, qui est l'ordre de capture (on append).
+        # C'est ce qui permet le tri chronologique sans dépendre de `ts`, absent
+        # des captures d'avant sa création. Ne pas réordonner ici.
         rows.append({
             "id": c["id"], "name": c["name"], "meta": c["meta"],
+            "ts": c.get("ts"),
             "bits": bits, "nframes": len(frames), "agree": agree,
             "tail": t,
             "ndur": len(pkt["durations"]),

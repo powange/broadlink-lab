@@ -587,8 +587,9 @@ async function loadAnalyze() {
 
 function renderSortOptions() {
   const cur = $('sort').value;
-  $('sort').innerHTML = '<option value="name">nom</option>' +
-    S.metaSchema.map(f =>
+  $('sort').innerHTML = '<option value="name">nom</option>'
+    + '<option value="seq">ordre de capture</option>'
+    + S.metaSchema.map(f =>
       `<option value="${esc(f.key)}">${esc(f.label || f.key)}</option>`).join('');
   $('sort').value = [...$('sort').options].some(o => o.value === cur) ? cur : 'name';
 }
@@ -697,11 +698,22 @@ function metaChips(m) {
   }).join('');
 }
 
+// Date de capture, en infobulle sur le nom. Ce qui rend l'ordre chronologique
+// lisible : on voit où une session s'est arrêtée et où la suivante a repris.
+function whenLabel(r) {
+  return r.ts ? new Date(r.ts * 1000).toLocaleString()
+              : 'capturée avant que la date ne soit enregistrée';
+}
+
 function sortedRows() {
   const k = $('sort').value;
   const rows = [...S.rows];
   const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
   if (k === 'name') return rows.sort(byName);
+  // L'API rend les captures dans l'ordre du store, qui est l'ordre où on les a
+  // faites. Trier chronologiquement, c'est donc ne pas trier — et ça marche
+  // aussi sur les captures d'avant l'existence du champ `ts`.
+  if (k === 'seq') return rows;
   const f = S.metaSchema.find(x => x.key === k);
   const num = (v) => {
     if (typeof v === 'boolean') return v ? 1 : 0;
@@ -770,7 +782,7 @@ function renderGrid() {
     const chips = metaChips(r.meta);
     h += `<tr data-id="${r.id}"><td class="lbl">
             <button class="danger" data-del="${r.id}" title="Supprimer">✕</button>
-            <span class="mono">${esc(r.name)}</span> ${chips}
+            <span class="mono" title="${esc(whenLabel(r))}">${esc(r.name)}</span> ${chips}
           </td>`;
     for (let i = 0; i < n; i++) {
       const b = r.bits[i] ?? '';
