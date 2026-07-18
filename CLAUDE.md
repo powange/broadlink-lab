@@ -564,6 +564,11 @@ L'éco est encodé **deux fois** : bits 16-17 à `10`, *et* le champ vitesse éc
 à 7 quelle que soit la vitesse réelle (vérifié à v1 et à v4). Qui génère une
 trame éco doit poser les deux.
 
+**C'est modélisé** par le couplage `couples` du profil : `{"value": 2, "set":
+{"speed": 7}}` sur le champ `mode`. `profile.couplings()` résout les valeurs
+forcées, le pont les applique. La trame éco générée est alors **identique bit
+pour bit** à la vraie capture `meco` — figé dans `dev/profile_v2_test.py`.
+
 ### L'octet de commande N'EST PAS décoratif — contrairement à la RF00234
 
 C'est la différence la plus importante entre les deux modèles, et elle vaut

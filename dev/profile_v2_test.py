@@ -23,8 +23,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(HERE), "shared"))
 
 import profile as P  # noqa: E402
+import decoder       # noqa: E402
 
 FIX = json.load(open(os.path.join(HERE, "fixtures", "real_rf00143.json")))
+GAP = FIX["expected"]["gap"]
 ok = True
 
 
@@ -183,6 +185,58 @@ check("start/end absent ou négatif -> refusé (sinon set_field écrit à côté
                                                  "role": "data"}))))
 
 
+
+# --- COUPLAGE éco -> speed=7. Sur la R00143, « mode éco » écrit AUSSI speed=7 :
+# la vraie télécommande pose les deux. Sans ça, la trame générée diffère de la
+# sienne — or l'étalon du projet, c'est l'identité bit pour bit (§3.2).
+COUPLED = json.loads(json.dumps(PROF))
+next(f for f in COUPLED["fields"] if f["name"] == "mode")["couples"] = \
+    [{"value": 2, "set": {"speed": 7}}]
+check("un profil avec couplage valide", P.validate(COUPLED) == [], P.validate(COUPLED))
+
+# état éco : les valeurs brutes de meco, MAIS speed laissé à 1 — le couplage doit
+# le forcer à 7 tout seul.
+eco = {"mode": 2, "reverse": 0, "cct": 24, "light": 1, "speed": 1, "lum": 2, "timer": 0}
+check("mode éco force speed=7", P.couplings(COUPLED, eco) == {"speed": 7},
+      P.couplings(COUPLED, eco))
+check("mode normal ne force rien", P.couplings(COUPLED, {**eco, "mode": 0}) == {})
+check("couplage vers un champ inexistant -> refusé",
+      any("couplage" in e for e in
+          errs(lambda p: field(p, "mode").update(couples=[{"value": 2, "set": {"x": 1}}]))))
+check("couplage qui déborde le champ cible -> refusé",
+      any("ne tient pas" in e for e in
+          errs(lambda p: field(p, "mode").update(couples=[{"value": 2, "set": {"speed": 99}}]))))
+
+
+def build_frame(prof, state, require):
+    """Réplique la construction de trame du pont : état -> requires -> couplages -> CRC."""
+    ref = decoder.pick_frame(decoder.decode_pwm(
+        decoder.decode_packet(prof["rf"]["reference_b64"])["durations"], GAP))
+    bits = ref
+    for f in P.data_fields(prof):
+        if f["name"] in state:
+            bits = decoder.set_field(bits, f["start"], f["end"], state[f["name"]],
+                                     f.get("msb_first", True))
+    for name, val in require.items():
+        t = next(f for f in prof["fields"] if f["name"] == name)
+        bits = decoder.set_field(bits, t["start"], t["end"], val, t.get("msb_first", True))
+    for name, val in P.couplings(prof, state).items():
+        t = next(f for f in prof["fields"] if f["name"] == name)
+        bits = decoder.set_field(bits, t["start"], t["end"], val, t.get("msb_first", True))
+    c = next(f for f in prof["fields"] if f["role"] == "crc")
+    return decoder.set_field(bits, c["start"], c["end"],
+                             decoder.compute_checksum(bits, "sub8", c["start"], c["end"], 0x55),
+                             True)
+
+
+meco = next(c for c in FIX["captures"] if c["name"].endswith("_meco"))
+meco_bits = decoder.pick_frame(decoder.decode_pwm(
+    decoder.decode_packet(meco["b64"])["durations"], GAP))
+gen = build_frame(COUPLED, eco, {"cmd": 13})    # éco -> requires cmd=13
+check("la trame éco générée est IDENTIQUE bit pour bit à la vraie capture meco",
+      gen == meco_bits,
+      f"généré speed={decoder.field_value(gen, 25, 28)}, "
+      f"réel speed={decoder.field_value(meco_bits, 25, 28)}")
 
 # --- le pont doit pouvoir fabriquer les trames : les valeurs de départ
 d = P.defaults(PROF)

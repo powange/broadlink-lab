@@ -336,6 +336,16 @@
         Une condition force une trame dédiée : régler deux champs conditionnés en
         demande deux.
       </div>
+      <!-- Couplage : une valeur en force une autre dans la MÊME trame. La vraie
+           télécommande pose les deux (mode éco -> speed=7). -->
+      <div class="row" style="margin-top:8px">
+        <div><label for="f-cpl-v">et quand ce champ vaut</label>
+          <input id="f-cpl-v" type="number" style="width:70px" placeholder="—"></div>
+        <div><label for="f-cpl-f">force aussi</label>
+          <select id="f-cpl-f"><option value="">— rien —</option></select></div>
+        <div><label for="f-cpl-w">à</label>
+          <input id="f-cpl-w" type="number" style="width:70px" placeholder="7" disabled></div>
+      </div>
     </div>
     <div class="row" style="justify-content:flex-end">
       <button value="cancel">Annuler</button>
@@ -1001,6 +1011,17 @@ function openDialog() {
   $('f-req-v').value = on ? req[on] : '';
   $('f-sem').value = existing?.semantics || 'absolute';
   $('f-identity').checked = !!existing?.identity;
+
+  // Couplage (une seule règle en UI ; le format en accepte plusieurs, à la main).
+  const cpl = (existing?.couples || [])[0];
+  const tgt = cpl ? Object.keys(cpl.set || {})[0] : '';
+  $('f-cpl-f').innerHTML = '<option value="">— rien —</option>' +
+    S.fields.filter(f => !(f.start === start && f.end === end)
+                      && f.role !== 'crc' && f.role !== 'const')
+      .map(f => `<option value="${esc(f.name)}">${esc(f.name)}</option>`).join('');
+  $('f-cpl-v').value = cpl ? cpl.value : '';
+  $('f-cpl-f').value = tgt;
+  $('f-cpl-w').value = tgt ? cpl.set[tgt] : '';
   syncK();
   syncRecv();
   msg('f-detect-msg', '');
@@ -1019,9 +1040,12 @@ function syncRecv() {
   $('f-id-box').style.display = $('f-role').value === 'const' ? '' : 'none';
   $('f-req-v').disabled = !$('f-req-f').value;
   if (!$('f-req-f').value) $('f-req-v').value = '';
+  $('f-cpl-w').disabled = !$('f-cpl-f').value;
+  if (!$('f-cpl-f').value) $('f-cpl-w').value = '';
 }
 $('f-role').addEventListener('change', syncRecv);
 $('f-req-f').addEventListener('change', syncRecv);
+$('f-cpl-f').addEventListener('change', syncRecv);
 
 const syncK = () => { $('f-k').disabled = $('f-crc').value !== 'sub8'; };
 $('f-crc').onchange = syncK;
@@ -1077,6 +1101,9 @@ $('dlg').addEventListener('close', async () => {
     if ($('f-sem').value === 'toggle') f.semantics = 'toggle';
     const rq = $('f-req-f').value;
     if (rq && $('f-req-v').value !== '') f.requires = { [rq]: +$('f-req-v').value };
+    const cf = $('f-cpl-f').value;
+    if (cf && $('f-cpl-v').value !== '' && $('f-cpl-w').value !== '')
+      f.couples = [{ value: +$('f-cpl-v').value, set: { [cf]: +$('f-cpl-w').value } }];
   }
   // un même nom ou une même tranche remplace l'existant
   const fields = S.fields.filter(x => x.name !== f.name && !(x.start === f.start && x.end === f.end));
@@ -1104,6 +1131,9 @@ function renderFields() {
       ${f.requires ? `<span class="mono" style="color:var(--accent)"
           title="Ce champ n'est appliqué que si la trame porte cette valeur — il lui faut donc sa propre trame">si ${
           esc(Object.entries(f.requires).map(([k, v]) => k + '=' + v).join(' '))}</span>` : ''}
+      ${(f.couples || []).map(c => `<span class="mono" style="color:var(--ok)"
+          title="Cette valeur en force une autre dans la même trame">=${c.value}→${
+          esc(Object.entries(c.set).map(([k, v]) => k + '=' + v).join(' '))}</span>`).join('')}
       <button data-rm="${esc(f.name)}" title="Retirer">✕</button>
     </span>`).join('') +
     (S.checksum.kind !== 'none'

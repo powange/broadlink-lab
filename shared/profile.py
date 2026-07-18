@@ -139,6 +139,33 @@ def _check_requires(f, fields):
     return errs
 
 
+def _check_couples(f, fields):
+    """Un couplage doit viser des champs réels, avec des valeurs qui tiennent."""
+    rules = f.get("couples")
+    if rules is None:
+        return []
+    errs = []
+    if not isinstance(rules, list):
+        return [f"champ « {f.get('name')} » : couples doit être une liste"]
+    for r in rules:
+        if not isinstance(r, dict) or "value" not in r or "set" not in r:
+            errs.append(f"champ « {f.get('name')} » : chaque couplage veut "
+                        f"{{\"value\": …, \"set\": {{…}}}}")
+            continue
+        for tgt, val in (r.get("set") or {}).items():
+            try:
+                t = _field(fields, tgt)
+            except ProfileError as exc:
+                errs.append(f"champ « {f.get('name')} » : couplage -> {exc}")
+                continue
+            width = t.get("end", 0) - t.get("start", 0)
+            if not isinstance(val, int) or isinstance(val, bool) \
+                    or not 0 <= val < 2 ** width:
+                errs.append(f"champ « {f['name']} » : couplage {tgt}={val!r} ne tient "
+                            f"pas dans les {width} bits de « {tgt} »")
+    return errs
+
+
 def emit_groups(profile, applying=None):
     """
     Les trames à émettre pour appliquer les champs `applying` (des noms).
@@ -173,6 +200,29 @@ def emit_groups(profile, applying=None):
             groups.append(dict(req))
     # aucun champ exigeant : une trame suffit, elle porte déjà tout l'état
     return groups or [{}]
+
+
+def couplings(profile, state):
+    """
+    Les valeurs qu'un état FORCE dans la même trame.
+
+    Certaines commandes en imposent d'autres : sur la Mantra R00143, « mode éco »
+    écrit AUSSI speed=7. La vraie télécommande pose les deux — sans ça, la trame
+    générée diffère bit pour bit de la sienne (le standard du projet, §3.2). Un
+    champ le déclare :
+
+        "couples": [{"value": 2, "set": {"speed": 7}}]
+
+    « quand ce champ vaut 2 (brut), écris aussi speed=7 (brut) ». Retourne
+    {nom_champ: valeur_brute} à écrire par-dessus l'état.
+    """
+    forced = {}
+    for f in profile.get("fields", []):
+        v = state.get(f["name"])
+        for rule in f.get("couples", []) or []:
+            if v == rule.get("value"):
+                forced.update(rule.get("set") or {})
+    return forced
 
 
 def identity(profile):
@@ -251,6 +301,7 @@ def validate(profile):
                 errs.append(f"champ « {f.get('name')} » : min ({mn}) > max ({mx})")
             errs += _check_semantics(f)
             errs += _check_requires(f, fields)
+            errs += _check_couples(f, fields)
             if f.get("identity") and f.get("role") != "const":
                 errs.append(f"champ « {f.get('name')} » : identity exige le rôle "
                             f"const — un champ qu'on réécrit n'identifie rien")

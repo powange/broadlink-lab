@@ -29,6 +29,7 @@ PORT = int(os.environ.get("MQTT_TEST_PORT", "18830"))
 UI_PORT = PORT + 1
 PROFILE_DIR = os.path.join(HERE, ".profiles")
 RF_QUEUE = os.path.join(HERE, ".rf_queue")
+OFFLINE_FLAG = os.path.join(HERE, ".rf_offline")
 STATE_DIR = os.path.join(HERE, ".bridge_state")
 
 ok = True
@@ -103,6 +104,10 @@ def main():
         if os.path.isdir(d):
             for f in os.listdir(d):
                 os.remove(os.path.join(d, f))
+    # un run précédent interrompu a pu laisser le RM4 « débranché »
+    for f in (RF_QUEUE, OFFLINE_FLAG):
+        if os.path.exists(f):
+            os.remove(f)
 
     print("  démarrage du broker amqtt…")
     start_broker()
@@ -111,7 +116,7 @@ def main():
     env = dict(os.environ,
                MQTT_HOST="127.0.0.1", MQTT_PORT=str(PORT),
                PROFILE_DIR=PROFILE_DIR, STATE_DIR=STATE_DIR,
-               FAKE_RF_FRAMES=RF_QUEUE,
+               FAKE_RF_FRAMES=RF_QUEUE, FAKE_OFFLINE_FLAG=OFFLINE_FLAG,
                DEVICE_IP="192.168.0.99", LOG_LEVEL="info",
                PORT=str(UI_PORT), WATCH_SECONDS="1",
                PYTHONPATH=f"{HERE}:{os.path.join(ROOT, 'rf_bridge')}")
@@ -534,6 +539,19 @@ def main():
         check("une trame d'une AUTRE télécommande est ignorée",
               seen.get("rf_bridge/flower/light/state") == before,
               "l'état n'a pas bougé")
+
+        # REPRISE APRÈS COUPURE DU RM4. On le « débranche » brièvement (backoff
+        # court), puis on le rebranche : l'écoute doit repartir toute seule — le
+        # switch reste ON, le thread ne meurt pas, la session morte est relâchée
+        # (reset_device) puis rouverte. Propriété de fiabilité, vérifiée seulement
+        # par lecture jusqu'ici.
+        open(OFFLINE_FLAG, "w").close()          # RM4 débranché
+        time.sleep(3)                            # le listener échoue, recule, lâche _dev
+        os.remove(OFFLINE_FLAG)                  # RM4 rebranché
+        open(RF_QUEUE, "w").write(fix["captures"][22]["b64"] + "\n")   # nouvel appui
+        got = wait_for(lambda: open(RF_QUEUE).read().strip() == "",
+                       "trame captée APRÈS reconnexion", 30)
+        check("l'écoute reprend toute seule après coupure/retour du RM4", got)
 
         cli.publish("rf_bridge/flower/listen/set", "OFF")
         wait_for(lambda: seen.get("rf_bridge/flower/listen/state") == "OFF",

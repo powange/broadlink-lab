@@ -1,5 +1,14 @@
 # Journal des modifications
 
+## 0.7.0
+
+**Couplage entre champs.** Certaines commandes en imposent une autre dans la même
+trame : sur la Mantra R00143, « mode éco » écrit AUSSI la vitesse 7 — la vraie
+télécommande pose les deux. Le dialogue de nommage permet de le déclarer
+(« quand ce champ vaut X, force aussi tel champ = Y »), et la trame générée
+redevient identique bit pour bit à celle de la télécommande. Sans ça, l'éco
+piloté depuis Home Assistant produisait une trame incomplète.
+
 ## 0.6.4
 
 **Deux garde-fous.**

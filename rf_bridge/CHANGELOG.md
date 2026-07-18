@@ -1,5 +1,12 @@
 # Journal des modifications
 
+## 0.6.0
+
+**Couplage entre champs.** Le pont applique les couplages déclarés dans le profil
+(`couples`) : une valeur peut en forcer une autre dans la même trame (mode éco ->
+vitesse 7 sur la Mantra R00143). La trame émise correspond alors exactement à
+celle de la vraie télécommande.
+
 ## 0.5.8
 
 **Fin de la revue de code — performance et robustesse.**

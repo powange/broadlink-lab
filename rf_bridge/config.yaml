@@ -1,5 +1,5 @@
 name: RF Bridge
-version: "0.5.8"
+version: "0.6.0"
 slug: rf_bridge
 description: >-
   Transforme des profils d'appareil en appareils Home Assistant, via MQTT

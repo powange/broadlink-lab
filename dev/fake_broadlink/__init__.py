@@ -38,6 +38,16 @@ LATENCY_POLLS = int(os.environ.get("FAKE_LATENCY_POLLS", "2"))
 # profil (le préambule et l'ID appairé sont le discriminateur).
 RF_FRAMES = os.environ.get("FAKE_RF_FRAMES")
 
+# Quand ce fichier existe, le RM4 est « débranché » : hello et toutes les
+# opérations lèvent un timeout réseau, comme un appareil coupé du courant. Le
+# test s'en sert pour simuler une coupure PUIS un retour, et vérifier que l'écoute
+# du pont reprend toute seule.
+OFFLINE_FLAG = os.environ.get("FAKE_OFFLINE_FLAG")
+
+
+def _offline():
+    return bool(OFFLINE_FLAG and os.path.exists(OFFLINE_FLAG))
+
 
 class FakeRM4:
     devtype = 0x520B          # RM4 Pro, comme le vrai (§8)
@@ -58,7 +68,13 @@ class FakeRM4:
         log.info("faux RM4 appairé @ %s", self.host[0])
         return True
 
+    def _check_online(self):
+        if _offline():
+            raise exceptions.NetworkTimeoutError(
+                "[Errno -4000] Network timeout (faux RM4 débranché)")
+
     def find_rf_packet(self, frequency=None):
+        self._check_online()
         # Le vrai RM4 Pro n'entre PAS en écoute si la session précédente n'a pas
         # été close par cancel_sweep_frequency. Sans ce cancel, la première trame
         # est captée puis plus rien : c'est le bug « marche une fois ». On ne le
@@ -80,6 +96,7 @@ class FakeRM4:
         return True
 
     def check_data(self):
+        self._check_online()
         if not self._armed:
             raise exceptions.StorageError("pas en écoute")
 
@@ -139,7 +156,7 @@ HELLO_DELAY = float(os.environ.get("FAKE_HELLO_DELAY", "0"))
 
 
 def hello(host, port=80, timeout=10):
-    if host != KNOWN_IP:
+    if host != KNOWN_IP or _offline():
         time.sleep(min(timeout, HELLO_DELAY))
         raise exceptions.NetworkTimeoutError(
             f"[Errno -4000] Network timeout: No response received within {timeout}s")

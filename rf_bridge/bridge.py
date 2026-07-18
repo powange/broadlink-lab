@@ -317,6 +317,15 @@ class Device:
             bits = decoder.set_field(bits, t["start"], t["end"], int(val),
                                      t.get("msb_first", True))
 
+        # Couplages : un état en force un autre dans la même trame (mode éco ->
+        # speed=7 sur la R00143). Sans ça la trame diffère de celle de la vraie
+        # télécommande. Après state + requires, avant le CRC.
+        for name, val in profile_mod.couplings(self.p, self.state).items():
+            t = next((x for x in self.fields if x["name"] == name), None)
+            if t is not None:
+                bits = decoder.set_field(bits, t["start"], t["end"], int(val),
+                                         t.get("msb_first", True))
+
         crc = next((f for f in self.fields if f.get("role") == "crc"), None)
         ck = self.p.get("checksum") or {"kind": "none"}
         if crc and ck.get("kind", "none") != "none":
