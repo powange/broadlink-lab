@@ -637,15 +637,24 @@ window.addEventListener('keydown', (e) => {
 });
 
 function pollCapture() {
+  // performance.now() : l'horloge murale saute (resync NTP, WSL2). MAX est un
+  // filet côté client — le worker serveur timeoute déjà à 30 s ; au-delà, le job
+  // est perdu (redémarrage en pleine capture) et l'UI resterait bloquée « en
+  // capture » à jamais. Et on replanifie APRÈS chaque réponse (setTimeout, pas
+  // setInterval) : deux polls ne se chevauchent pas si l'un dépasse 500 ms.
+  const started = performance.now();
+  const MAX = 45000;
   return new Promise((resolve, reject) => {
-    const t = setInterval(async () => {
+    const tick = async () => {
+      if (performance.now() - started > MAX)
+        return reject(new Error('capture sans réponse du serveur (job perdu ?) — réessaie'));
       try {
         const r = await GET('capture/poll');
-        if (['done', 'timeout', 'error', 'cancelled'].includes(r.state)) {
-          clearInterval(t); resolve(r);
-        }
-      } catch (e) { clearInterval(t); reject(e); }
-    }, 500);
+        if (['done', 'timeout', 'error', 'cancelled'].includes(r.state)) return resolve(r);
+        setTimeout(tick, 500);
+      } catch (e) { reject(e); }
+    };
+    tick();
   });
 }
 
@@ -903,6 +912,11 @@ function renderGrid() {
   wrap.innerHTML = h;
   wrap.querySelectorAll('[data-del]').forEach(b => b.onclick = async (e) => {
     e.stopPropagation();
+    // Confirmation : le ✕ est collé à la zone de clic-glisser, et une capture
+    // est une des rares données coûteuses du projet (un vrai signal radio). Un
+    // clic malheureux ne doit pas la détruire sans un mot.
+    const row = S.rows.find(r => r.id === b.dataset.del);
+    if (!confirm(`Supprimer la capture « ${row?.name || b.dataset.del} » ?`)) return;
     await SEND('captures/' + b.dataset.del, undefined, 'DELETE');
     await loadAnalyze();
   });

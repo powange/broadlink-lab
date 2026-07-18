@@ -1,5 +1,16 @@
 # Journal des modifications
 
+## 0.6.4
+
+**Deux garde-fous.**
+
+- **Confirmation avant de supprimer une capture.** Le bouton ✕ est collé à la
+  grille de sélection ; une capture est un vrai signal radio, coûteux à
+  reproduire. Un clic malheureux demande maintenant confirmation.
+- **La capture ne peut plus rester bloquée indéfiniment.** Si le serveur perd le
+  job (redémarrage en pleine capture), l'UI abandonne au bout de 45 s au lieu de
+  rester « en capture » pour toujours. Les sondages ne se chevauchent plus non plus.
+
 ## 0.6.3
 
 **Fin de la revue de code — finitions et performance.**
