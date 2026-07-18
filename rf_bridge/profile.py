@@ -227,18 +227,43 @@ def validate(profile):
         names = [f.get("name") for f in fields]
         if len(set(names)) != len(names):
             errs.append("deux champs portent le même nom")
+        # Tranches valides ET entières : un `start`/`end` absent ou négatif
+        # échappait à l'ancien garde `end <= start` (0 <= -1 est faux -> validé),
+        # puis `set_field` écrivait à côté et pouvait DOUBLER la taille de la
+        # trame. On exige donc des bornes entières, positives, ordonnées.
+        occupied = {}
         for f in fields:
-            if f.get("end", 0) <= f.get("start", -1):
-                errs.append(f"champ « {f.get('name')} » : tranche de bits invalide")
+            s, e = f.get("start"), f.get("end")
+            if not isinstance(s, int) or not isinstance(e, int) or not 0 <= s < e:
+                errs.append(f"champ « {f.get('name')} » : tranche de bits invalide "
+                            f"(start={s}, end={e}) — attendu 0 <= start < end")
+            else:
+                # Chevauchement : écrire un champ corromprait silencieusement l'autre.
+                for i in range(s, e):
+                    if i in occupied:
+                        errs.append(f"champ « {f.get('name')} » : le bit {i} est "
+                                    f"déjà pris par « {occupied[i]} »")
+                        break
+                    occupied[i] = f.get("name")
+            # min <= max, sinon sliders et export cassés
+            mn, mx = f.get("min"), f.get("max")
+            if isinstance(mn, int) and isinstance(mx, int) and mn > mx:
+                errs.append(f"champ « {f.get('name')} » : min ({mn}) > max ({mx})")
             errs += _check_semantics(f)
             errs += _check_requires(f, fields)
             if f.get("identity") and f.get("role") != "const":
                 errs.append(f"champ « {f.get('name')} » : identity exige le rôle "
                             f"const — un champ qu'on réécrit n'identifie rien")
 
-        if not any(f.get("role") == "crc" for f in fields) \
-                and (profile.get("checksum") or {}).get("kind", "none") != "none":
+        has_crc = any(f.get("role") == "crc" for f in fields)
+        ck_declared = (profile.get("checksum") or {}).get("kind", "none") != "none"
+        if not has_crc and ck_declared:
             errs.append("un checksum est déclaré mais aucun champ n'a le rôle « crc »")
+        # ET l'inverse : un champ crc sans checksum ne serait jamais recalculé ->
+        # trames à somme périmée -> récepteur muet sans le moindre message (§7).
+        if has_crc and not ck_declared:
+            errs.append("un champ « crc » existe mais aucun checksum n'est déclaré "
+                        "(kind=none) — le CRC ne serait jamais recalculé")
 
         ents = profile.get("entities") or []
         if not ents:

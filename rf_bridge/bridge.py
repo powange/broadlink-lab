@@ -420,9 +420,20 @@ class Device:
             tog = set(profile_mod.toggles(self.p))
             applying = [k for k, v in changes.items()
                         if k not in tog or self.state.get(k) != v]
+            prev = dict(self.state)
             self.state.update(changes)
-            self._save_state()
-            self.emit(applying)
+            sent = self.emit(applying)
+            if sent:
+                self._save_state()
+            else:
+                # Rien n'a été émis (trame non vérifiée, RM4 injoignable) : ne pas
+                # persister ni prétendre l'état appliqué. On revient à l'état
+                # d'avant — un redémarrage ne doit pas ressusciter une commande
+                # jamais partie (rallumer une lampe à 3 h). Optimiste, oui, mais
+                # pas menteur au point de graver du jamais-transmis sur disque.
+                self.state = prev
+                log.warning("[%s] émission échouée -> commande ignorée, état inchangé",
+                            self.id)
         self.publish_state()
 
     # ---- discovery + état
@@ -768,7 +779,15 @@ class Listener:
                                     "champ `identity` : trames non reconnaissables",
                                     ", ".join(mute))
                 if not devs:
-                    self._armed = False       # radio libre : on n'y touche pas
+                    # Plus personne à suivre : si on avait armé le RM4 en
+                    # réception, il faut le SORTIR du mode écoute, sinon il reste
+                    # monopolisé (le labo et l'intégration Broadlink de HA le
+                    # croiraient libre alors qu'il écoute encore). disarm() gère
+                    # aussi le cas où une émission avait déjà désarmé entre-temps.
+                    if self._armed:
+                        with _radio:
+                            self.disarm()
+                    self._armed = False
                     fails = 0
                     continue
                 freq, left = self.frequency(devs)
@@ -894,22 +913,30 @@ class Bridge:
                 mtime = os.path.getmtime(path)
                 if did in self.devices and self.seen.get(path) == mtime:
                     continue
-                self.seen[path] = mtime
-                d = Device(prof, self.client)
-                # garder l'état courant si l'appareil existait déjà : recharger
-                # un profil ne doit pas réémettre un état arbitraire
-                if did in self.devices:
-                    old = self.devices[did].state
-                    d.state.update({k: v for k, v in old.items() if k in d.state})
-                self.devices[did] = d
-                if self.connected:
-                    # s'abonner AVANT d'annoncer : HA peut envoyer une
-                    # commande dès qu'il voit la discovery, et sans abonnement
-                    # elle tombe dans le vide, en silence.
-                    d.subscribe()
-                    d.publish_discovery()
-                    d.publish_state()
-                changed.append(f"+{did}")
+                # Construire un Device décode sa référence — un `reference_b64`
+                # présent mais indécodable (validate ne vérifie que sa PRÉSENCE)
+                # lèverait ici. Isolé par appareil : un profil bancal ne doit pas
+                # empêcher les AUTRES de charger, ni faire planter l'import (500).
+                try:
+                    d = Device(prof, self.client)
+                    # garder l'état courant si l'appareil existait déjà : recharger
+                    # un profil ne doit pas réémettre un état arbitraire
+                    if did in self.devices:
+                        old = self.devices[did].state
+                        d.state.update({k: v for k, v in old.items() if k in d.state})
+                    self.devices[did] = d
+                    if self.connected:
+                        # s'abonner AVANT d'annoncer : HA peut envoyer une
+                        # commande dès qu'il voit la discovery, et sans abonnement
+                        # elle tombe dans le vide, en silence.
+                        d.subscribe()
+                        d.publish_discovery()
+                        d.publish_state()
+                    self.seen[path] = mtime
+                    changed.append(f"+{did}")
+                except Exception as exc:              # noqa: BLE001
+                    log.exception("[%s] chargement impossible", did)
+                    self.errors[os.path.basename(path)] = [f"chargement impossible : {exc}"]
 
             if changed:
                 log.info("profils rechargés : %s", " ".join(changed))

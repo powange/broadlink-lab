@@ -164,6 +164,24 @@ check("identity sur un champ réécrit -> refusé — il n'identifierait rien",
       any("identifie rien" in e for e in
           errs(lambda p: field(p, "speed").update(identity=True))))
 
+# validate doit intercepter les profils corrupteurs — c'est sa raison d'être :
+# échouer au chargement plutôt qu'au ventilateur qui n'obéit qu'à moitié.
+check("champs qui se chevauchent -> refusé (l'écriture de l'un corromprait l'autre)",
+      any("déjà pris" in e for e in
+          errs(lambda p: p["fields"].append(
+              {"name": "x", "start": 25, "end": 27, "role": "data"}))))
+check("champ crc sans checksum -> refusé (le CRC ne serait jamais recalculé)",
+      any("jamais recalculé" in e for e in errs(lambda p: p.update(checksum={"kind": "none"}))))
+check("min > max -> refusé",
+      any("min" in e and "max" in e for e in
+          errs(lambda p: field(p, "lum").update(min=11, max=2))))
+check("start/end absent ou négatif -> refusé (sinon set_field écrit à côté)",
+      any("invalide" in e for e in
+          errs(lambda p: p["fields"].append({"name": "y", "end": 50, "role": "data"})))
+      and any("invalide" in e for e in
+              errs(lambda p: p["fields"].append({"name": "z", "start": -2, "end": 4,
+                                                 "role": "data"}))))
+
 
 
 # --- le pont doit pouvoir fabriquer les trames : les valeurs de départ

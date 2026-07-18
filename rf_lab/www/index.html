@@ -661,6 +661,14 @@ async function loadAnalyze() {
   S.metaSchema = d.meta_schema || [];
   if (schemaChanged) { renderMetaInputs(); renderSortOptions(); }
   if (!S.rows.some(r => r.id === S.refId)) S.refId = S.rows[0]?.id ?? null;
+  // Toute recharge (surtout un changement d'appareil) invalide une trame déjà
+  // générée : elle a été bâtie pour d'AUTRES champs et une autre référence, avec
+  // l'ID appairé d'un autre appareil. Ne pas laisser « Émettre » vert dessus,
+  // sinon on pilote le mauvais appareil en croyant piloter le bon.
+  S.gen = null;
+  if ($('send')) $('send').disabled = true;
+  if ($('send2')) $('send2').disabled = true;
+  if ($('gen-out')) $('gen-out').innerHTML = '';
   renderGrid(); renderFields(); renderRefs(); renderSliders();
 }
 
@@ -941,6 +949,10 @@ function paintSel() {
 function openDialog() {
   const { start, end } = S.sel;
   const existing = S.fields.find(f => f.start === start && f.end === end);
+  // Réinitialiser returnValue : sinon un précédent « Enregistrer » laisse 'ok',
+  // et fermer par Échap ré-enregistrerait les modifications qu'on voulait
+  // annuler (openWsDialog fait déjà ce reset — on aligne).
+  $('dlg').returnValue = '';
   $('dlg-range').textContent = `[${start}, ${end}) — ${end - start} bits`;
   $('f-name').value = existing?.name || '';
   $('f-role').value = existing?.role || 'data';

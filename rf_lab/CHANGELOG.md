@@ -1,5 +1,21 @@
 # Journal des modifications
 
+## 0.6.2
+
+**Suite de la revue de code — robustesse.**
+
+- **Une capture malformée ne fait plus tomber toute la grille.** Une seule
+  capture indécodable renvoyait une erreur sur l'écran central ; désormais la
+  ligne fautive s'affiche en erreur et les autres restent lisibles.
+- **Le générateur ne peut plus émettre vers le mauvais appareil.** En changeant
+  d'espace de travail, le bouton « Émettre » restait vert sur une trame générée
+  pour l'appareil précédent (avec son ID appairé). Toute recharge le réinitialise.
+- **Le dialogue de nommage n'enregistre plus quand on annule** (fermer par Échap
+  après un précédent « Enregistrer » ré-enregistrait les modifications).
+- **Un profil incohérent est refusé au chargement** : champs qui se chevauchent,
+  champ CRC sans checksum, bornes invalides — les cas qui, sinon, ne se voyaient
+  qu'au ventilateur qui n'obéit qu'à moitié.
+
 ## 0.6.1
 
 **Corrections de fiabilité, issues d'une revue de code.**

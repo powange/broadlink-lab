@@ -452,6 +452,8 @@ def delete_workspace(wid):
 @writes_store
 def add_capture():
     body = request.json or {}
+    if not body.get("b64"):
+        return jsonify(error="champ « b64 » manquant"), 400
     store = load_store()
     store["captures"].append({
         "id": uuid.uuid4().hex[:8],
@@ -489,27 +491,37 @@ def api_analyze():
 
     rows, bitmap = [], {}
     for c in store["captures"]:
-        pkt = decoder.decode_packet(c["b64"])
-        frames = (decoder.decode_pwm(pkt["durations"], gap, tail) if mode == "pwm"
-                  else decoder.decode_manchester(pkt["durations"], gap))
-        # trame majoritaire, pas frames[0] : la 1re répétition porte le bruit de
-        # capture et fausserait l'alignement du diff (cf. decoder.pick_frame)
-        bits = decoder.pick_frame(frames)
-        agree = sum(1 for f in frames if f["bits"] == bits)
-        bitmap[c["name"]] = bits
-        t = frames[0].get("tail") if frames else None
-        # `rows` suit l'ordre du store, qui est l'ordre de capture (on append).
-        # C'est ce qui permet le tri chronologique sans dépendre de `ts`, absent
-        # des captures d'avant sa création. Ne pas réordonner ici.
-        rows.append({
-            "id": c["id"], "name": c["name"], "meta": c["meta"],
-            "ts": c.get("ts"),
-            "bits": bits, "nframes": len(frames), "agree": agree,
-            "tail": t,
-            "ndur": len(pkt["durations"]),
-            "durations": pkt["durations"][:80],
-            "header": pkt["header"],
-        })
+        # Décodage isolé par capture : une seule capture malformée (b64 tronqué,
+        # édition manuelle) ne doit PAS faire tomber toute la grille — l'écran
+        # central de l'outil. La ligne fautive s'affiche en erreur, les autres
+        # restent lisibles.
+        try:
+            pkt = decoder.decode_packet(c["b64"])
+            frames = (decoder.decode_pwm(pkt["durations"], gap, tail) if mode == "pwm"
+                      else decoder.decode_manchester(pkt["durations"], gap))
+            # trame majoritaire, pas frames[0] : la 1re répétition porte le bruit
+            # de capture et fausserait l'alignement du diff (cf. decoder.pick_frame)
+            bits = decoder.pick_frame(frames)
+            agree = sum(1 for f in frames if f["bits"] == bits)
+            bitmap[c["name"]] = bits
+            t = frames[0].get("tail") if frames else None
+            rows.append({
+                "id": c["id"], "name": c["name"], "meta": c["meta"],
+                "ts": c.get("ts"),
+                "bits": bits, "nframes": len(frames), "agree": agree,
+                "tail": t,
+                "ndur": len(pkt["durations"]),
+                "durations": pkt["durations"][:80],
+                "header": pkt["header"],
+            })
+        except Exception as exc:              # noqa: BLE001
+            log.warning("capture « %s » indécodable : %s", c.get("name"), exc)
+            rows.append({
+                "id": c["id"], "name": c["name"], "meta": c.get("meta", {}),
+                "ts": c.get("ts"),
+                "bits": "", "nframes": 0, "agree": 0, "tail": None,
+                "error": str(exc),
+            })
 
     return jsonify(rows=rows,
                    analysis=decoder.analyze({k: v for k, v in bitmap.items() if v}),

@@ -1,5 +1,19 @@
 # Journal des modifications
 
+## 0.5.7
+
+**Suite de la revue de code — robustesse.**
+
+- **Un profil bancal n'empêche plus les autres de se charger.** Une référence
+  indécodable dans un profil faisait échouer l'import de TOUS les profils (500) ;
+  chaque appareil est maintenant chargé isolément, l'erreur va dans l'UI.
+- **Décocher le dernier appareil suivi libère vraiment le RM4.** La session de
+  réception n'était pas close, le RM4 restait monopolisé ; il est désormais sorti
+  du mode écoute.
+- **Une commande dont l'émission échoue n'est plus persistée comme appliquée.**
+  L'état revenait à sa valeur précédente au lieu de graver sur disque une commande
+  jamais transmise (qu'un redémarrage aurait pu rejouer).
+
 ## 0.5.6
 
 **Le 504 résiduel et un gel de 18 s, corrigés — suite à une revue de code.**
