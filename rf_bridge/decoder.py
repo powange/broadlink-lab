@@ -252,6 +252,12 @@ def field_value(bits, start, end, msb_first=True):
 
 def set_field(bits, start, end, value, msb_first=True):
     """Écrit value dans la tranche [start, end) et retourne la nouvelle bitstring."""
+    # Une tranche hors de la trame écrivait à côté et pouvait DOUBLER la taille
+    # de la bitstring silencieusement (start > len, ou start négatif). On refuse
+    # plutôt que de corrompre : le validate du profil est censé l'éviter en amont,
+    # ce garde est le filet.
+    if not 0 <= start < end <= len(bits):
+        raise ValueError(f"tranche [{start}, {end}) hors de la trame de {len(bits)} bits")
     width = end - start
     chunk = format(value & ((1 << width) - 1), f"0{width}b")
     if not msb_first:

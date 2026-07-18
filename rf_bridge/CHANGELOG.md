@@ -1,5 +1,15 @@
 # Journal des modifications
 
+## 0.5.8
+
+**Fin de la revue de code — performance et robustesse.**
+
+- **La référence n'est plus re-décodée à chaque émission ni à chaque trame
+  entendue.** Elle est immuable pour un appareil donné : décodée une fois,
+  réutilisée. Gain net sur le chemin chaud (chaque cran de slider).
+- **Plus de crash intermittent** quand la liste des appareils est parcourue
+  pendant qu'un rechargement de profil la modifie (copie défensive).
+
 ## 0.5.7
 
 **Suite de la revue de code — robustesse.**

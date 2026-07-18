@@ -656,7 +656,12 @@ def build_bits(ref_bits, fields, values, checksum):
 @app.post("/api/generate")
 def generate():
     body = request.json or {}
-    gap = int(body.get("gap", 2000))
+    try:
+        gap = int(body.get("gap", 2000))
+    except (TypeError, ValueError):
+        return jsonify(error="gap invalide"), 400
+    if not body.get("ref_id"):
+        return jsonify(error="champ « ref_id » manquant"), 400
     store = load_store()
 
     ref = next((c for c in store["captures"] if c["id"] == body["ref_id"]), None)

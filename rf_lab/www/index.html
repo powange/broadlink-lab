@@ -919,7 +919,14 @@ function wireDrag(wrap) {
     const c = colOf(e);
     if (c === null) return;
     e.preventDefault();
-    S.drag = { a: c, b: c };
+    // Index colonne -> cellules, construit UNE fois. paintSel ne requête donc
+    // plus tout le DOM (≈ 2560 <td> sur une grille réaliste) à chaque mousemove.
+    const byCol = new Map();
+    wrap.querySelectorAll('td.bit').forEach(td => {
+      const col = +td.dataset.col;
+      (byCol.get(col) || byCol.set(col, []).get(col)).push(td);
+    });
+    S.drag = { a: c, b: c, byCol, lo: null, hi: null };
     paintSel();
   };
   wrap.onmousemove = (e) => {
@@ -940,10 +947,16 @@ function wireDrag(wrap) {
 function paintSel() {
   if (!S.drag) return;
   const lo = Math.min(S.drag.a, S.drag.b), hi = Math.max(S.drag.a, S.drag.b);
-  document.querySelectorAll('td.bit').forEach(td => {
-    const c = +td.dataset.col;
-    td.classList.toggle('sel', c >= lo && c <= hi);
-  });
+  const { byCol, lo: plo, hi: phi } = S.drag;
+  const setCol = (col, on) =>
+    (byCol.get(col) || []).forEach(td => td.classList.toggle('sel', on));
+  if (plo === null) {                       // premier paint : toute la plage
+    for (const col of byCol.keys()) setCol(col, col >= lo && col <= hi);
+  } else {                                  // ensuite : seules les colonnes qui changent
+    for (let c = Math.min(lo, plo); c <= Math.max(hi, phi); c++)
+      setCol(c, c >= lo && c <= hi);
+  }
+  S.drag.lo = lo; S.drag.hi = hi;
 }
 
 function openDialog() {
@@ -1451,10 +1464,12 @@ function show(text, filename) {
 $('reload').onclick = () => { refreshStatus(); loadAnalyze(); };
 $('gap').onchange = loadAnalyze;
 $('tail').onchange = loadAnalyze;
-$('mode').onchange = () => {
+$('mode').onchange = async () => {
+  // APRÈS loadAnalyze : renderGrid réécrit #analysis-msg, donc un avertissement
+  // affiché avant clignotait et disparaissait aussitôt.
+  await loadAnalyze();
   if (mode() === 'manchester')
     msg('analysis-msg', 'Manchester : le diff fonctionne, mais la génération non — rebuild_frame exige les index PWM (cf. §7).', 'warn');
-  loadAnalyze();
 };
 $('sort').onchange = () => { renderGrid(); renderRefs(); };
 
@@ -1540,8 +1555,10 @@ async function loadWorkspaces() {
 // ne doit fuir d'un espace à l'autre, c'est toute la raison d'être de la
 // séparation.
 async function reloadEverything() {
+  // PAS refreshStatus() ici : la connexion au RM4 est globale, pas propre à
+  // l'espace, et /api/status peut coûter jusqu'à 5 s de broadcast (§10). Basculer
+  // d'appareil ne doit pas le repayer — le statut reste à l'init et au bouton.
   await loadWorkspaces();
-  await refreshStatus();
   await loadAnalyze();
 }
 
@@ -1596,7 +1613,9 @@ $('ws-dlg').addEventListener('close', async () => {
   await reloadEverything();
 });
 
-loadWorkspaces().then(refreshStatus);
+// .catch : sans lui, un /api/workspaces en échec au démarrage laissait un rejet
+// non géré, le sélecteur vide, et refreshStatus jamais appelé (barre figée).
+loadWorkspaces().catch(e => msg('analysis-msg', e.message, 'err')).finally(refreshStatus);
 loadAnalyze().catch(e => msg('analysis-msg', e.message, 'err'));
 </script>
 </body>

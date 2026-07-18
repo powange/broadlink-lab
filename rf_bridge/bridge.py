@@ -216,7 +216,23 @@ class Device:
         self.gap = prof["rf"].get("gap", 2000)
         self.lock = threading.Lock()
         self.state_path = os.path.join(STATE_DIR, f"state_{self.id}.json")
+        self._ref_cache = None
         self.state = self._load_state()
+
+    def _ref(self):
+        """
+        La référence décodée : (pkt, frames, ref_bits). Mémoïsée.
+
+        `reference_b64` et `gap` sont immuables pour une instance de Device (un
+        rechargement de profil crée un NOUVEAU Device). Inutile de re-décoder à
+        chaque émission et à chaque trame entendue — c'était le chemin chaud,
+        rejoué à chaque cran de slider.
+        """
+        if self._ref_cache is None:
+            pkt = decoder.decode_packet(self.p["rf"]["reference_b64"])
+            frames = decoder.decode_pwm(pkt["durations"], self.gap)
+            self._ref_cache = (pkt, frames, decoder.pick_frame(frames))
+        return self._ref_cache
 
     # ---- persistance de l'état
     def _load_state(self):
@@ -281,9 +297,7 @@ class Device:
         On repart toujours de la capture de référence : elle porte le préambule
         et l'ID appairé, qu'on ne doit jamais reconstruire (§3.2 / §7).
         """
-        pkt = decoder.decode_packet(self.p["rf"]["reference_b64"])
-        frames = decoder.decode_pwm(pkt["durations"], self.gap)
-        ref_bits = decoder.pick_frame(frames)
+        pkt, frames, ref_bits = self._ref()
 
         bits = ref_bits
         for f in profile_mod.data_fields(self.p):
@@ -359,9 +373,7 @@ class Device:
         try:
             pkt = decoder.decode_packet(b64)
             bits = decoder.pick_frame(decoder.decode_pwm(pkt["durations"], self.gap))
-            ref = decoder.pick_frame(decoder.decode_pwm(
-                decoder.decode_packet(self.p["rf"]["reference_b64"])["durations"],
-                self.gap))
+            ref = self._ref()[2]              # référence mémoïsée (cf. _ref)
         except Exception:                     # noqa: BLE001
             return False
         if not bits or len(bits) != len(ref):
@@ -990,7 +1002,7 @@ def api_status():
                   "model": d.p["device"].get("model"),
                   "entities": [e["type"] for e in d.p["entities"]],
                   "state": d.state}
-                 for d in b.devices.values()],
+                 for d in list(b.devices.values())],   # copie : reload() peut muter
         errors=b.errors)
 
 
@@ -1105,7 +1117,7 @@ def main():
         log.info("connecté au broker (rc=%s)", rc)
         bridge.connected = True
         c.publish(f"{BASE}/status", "online", retain=True)
-        for d in bridge.devices.values():
+        for d in list(bridge.devices.values()):   # copie : reload() (watch) peut muter
             d.subscribe()          # avant la discovery : cf. Bridge.reload
             d.publish_discovery()
             d.publish_state()

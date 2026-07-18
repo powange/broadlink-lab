@@ -1,5 +1,18 @@
 # Journal des modifications
 
+## 0.6.3
+
+**Fin de la revue de code — finitions et performance.**
+
+- **Sélection au clic-glisser plus fluide.** La grille interrogeait tout le DOM à
+  chaque déplacement de souris ; elle ne touche plus que les colonnes qui changent.
+- **L'avertissement Manchester ne clignote plus** (il était effacé aussitôt affiché).
+- **Basculer d'appareil ne repaie plus la découverte réseau** (jusqu'à 5 s) : la
+  connexion au Broadlink est globale, pas propre à l'espace.
+- Un `/api/workspaces` en échec au démarrage n'immobilise plus la barre d'état.
+- `set_field` refuse une tranche hors trame au lieu d'écrire à côté ; `generate`
+  valide ses entrées (400 au lieu de 500).
+
 ## 0.6.2
 
 **Suite de la revue de code — robustesse.**
