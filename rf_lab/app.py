@@ -47,6 +47,47 @@ _capture = {"state": "idle", "message": "", "result": None}
 _cancel = threading.Event()
 _connect_cancel = threading.Event()
 
+# Sérialise les endpoints qui modifient le store. Waitress tourne à 8 threads :
+# sans ça, deux requêtes font chacune load->modif->save sur une copie, et la
+# seconde écrase la première (perte silencieuse d'une capture, d'un champ…).
+# Réentrant : un handler qui en appellerait un autre ne se bloque pas lui-même.
+_store_lock = threading.RLock()
+
+
+def writes_store(fn):
+    """Un endpoint qui fait load_store/save_store : tout son corps sous le verrou."""
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **k):
+        with _store_lock:
+            return fn(*a, **k)
+    return wrapper
+
+
+class RadioBusy(RuntimeError):
+    """La radio est prise par une capture : on ne peut pas émettre en même temps."""
+
+
+class radio_exclusive:
+    """
+    Réserve la radio le temps d'une émission.
+
+    Le RM4 n'a qu'UNE socket UDP, et python-broadlink n'est pas thread-safe :
+    émettre pendant que `capture_worker` boucle sur `check_data()` mélange les
+    paquets (l'émission peut ramasser l'octet RF capturé, ou l'inverse). `_lock`
+    est tenu par une capture pour toute sa durée ; si on ne peut pas le prendre,
+    c'est qu'une capture tourne — on refuse plutôt que de corrompre les deux.
+    """
+
+    def __enter__(self):
+        if not _lock.acquire(blocking=False):
+            raise RadioBusy("une capture est en cours — émission refusée")
+        return self
+
+    def __exit__(self, *exc):
+        _lock.release()
+
 
 # ------------------------------------------------------------ persistance
 
@@ -116,8 +157,22 @@ def load_book():
     """
     if not os.path.exists(STORE):
         return json.loads(json.dumps(DEFAULT_BOOK))
-    with open(STORE) as fh:
-        data = json.load(fh)
+    try:
+        with open(STORE) as fh:
+            data = json.load(fh)
+    except (json.JSONDecodeError, OSError) as exc:
+        # Un store illisible (édition manuelle, coupure en pleine écriture, disque)
+        # ne doit PAS rendre tout l'addon inutilisable — 500 partout, sans issue.
+        # On met le fichier de côté pour post-mortem et on repart propre. La donnée
+        # est de toute façon déjà perdue ; l'important est que l'outil redémarre.
+        bad = STORE + ".corrupt"
+        try:
+            os.replace(STORE, bad)
+            log.error("store illisible (%s) -> mis de côté dans %s, on repart vide",
+                      exc, bad)
+        except OSError:
+            log.error("store illisible (%s) et non déplaçable", exc)
+        return json.loads(json.dumps(DEFAULT_BOOK))
     if "workspaces" not in data:                 # ancien format plat -> migration
         ip = data.pop("device_ip", None)
         data.pop("version", None)
@@ -133,10 +188,20 @@ def load_book():
 
 
 def save_book(book):
-    tmp = STORE + ".tmp"
-    with open(tmp, "w") as fh:
-        json.dump(book, fh, indent=2)
-    os.replace(tmp, STORE)
+    # Tmp UNIQUE par écriture. Un nom fixe partagé faisait que deux écritures
+    # concurrentes (waitress tourne à 8 threads) s'entrelaçaient dans le même
+    # fichier temporaire, puis le publiaient corrompu. os.replace reste atomique.
+    tmp = f"{STORE}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp, "w") as fh:
+            json.dump(book, fh, indent=2)
+        os.replace(tmp, STORE)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
 
 
 def load_store():
@@ -267,6 +332,10 @@ def capture_start():
         return jsonify(error="capture déjà en cours"), 409
 
     _cancel.clear()
+    # Aussi _connect_cancel : sans ça, avoir annulé une connexion (device/cancel)
+    # empoisonnait toute capture suivante (get_device sort aussitôt par « connexion
+    # annulée »), jusqu'à repasser par /api/device. Asymétrie corrigée.
+    _connect_cancel.clear()
     global _capture
     _capture = {"state": "listening", "message": "Démarrage…", "result": None}
 
@@ -316,6 +385,7 @@ def list_workspaces():
 
 
 @app.post("/api/workspaces")
+@writes_store
 def create_workspace():
     """Nouvel espace = nouvelle télécommande à décoder. Devient l'espace actif."""
     body = request.json or {}
@@ -335,6 +405,7 @@ def create_workspace():
 
 
 @app.post("/api/workspaces/select")
+@writes_store
 def select_workspace():
     book = load_book()
     wid = (request.json or {}).get("id")
@@ -346,6 +417,7 @@ def select_workspace():
 
 
 @app.post("/api/workspaces/device")
+@writes_store
 def set_workspace_device():
     """Renomme / renseigne l'appareil de l'espace actif (id inchangé)."""
     book = load_book()
@@ -362,6 +434,7 @@ def set_workspace_device():
 
 
 @app.delete("/api/workspaces/<wid>")
+@writes_store
 def delete_workspace(wid):
     book = load_book()
     if wid not in book["workspaces"]:
@@ -376,6 +449,7 @@ def delete_workspace(wid):
 
 
 @app.post("/api/captures")
+@writes_store
 def add_capture():
     body = request.json or {}
     store = load_store()
@@ -396,6 +470,7 @@ def add_capture():
 
 
 @app.delete("/api/captures/<cid>")
+@writes_store
 def del_capture(cid):
     store = load_store()
     store["captures"] = [c for c in store["captures"] if c["id"] != cid]
@@ -452,6 +527,7 @@ def get_meta_schema():
 
 
 @app.post("/api/meta-schema")
+@writes_store
 def set_meta_schema():
     """
     Persiste les paramètres d'état à saisir à chaque capture. Ne touche pas aux
@@ -526,6 +602,7 @@ def api_detect_checksum():
 
 
 @app.post("/api/fields")
+@writes_store
 def set_fields():
     body = request.json or {}
     store = load_store()
@@ -617,18 +694,24 @@ def _describe(b64, gap=2000):
 @app.post("/api/send")
 def send():
     body = request.json or {}
+    if "b64" not in body:
+        return jsonify(error="champ « b64 » manquant"), 400
     try:
-        dev = get_device()
-        import base64 as b64mod
-        dev.send_data(b64mod.b64decode(body["b64"]))
+        with radio_exclusive():
+            dev = get_device()
+            import base64 as b64mod
+            dev.send_data(b64mod.b64decode(body["b64"]))
         log.info("ÉMIS -> %s", _describe(body["b64"], int(body.get("gap", 2000))))
         return jsonify(ok=True)
+    except RadioBusy as exc:
+        return jsonify(error=str(exc)), 409
     except Exception as exc:              # noqa: BLE001
         log.exception("send")
         return jsonify(error=str(exc)), 500
 
 
 @app.post("/api/ref")
+@writes_store
 def set_ref():
     """Capture de référence par défaut pour /api/set."""
     body = request.json or {}
@@ -692,10 +775,13 @@ def api_set():
 
     if body.get("send", True):
         try:
-            dev = get_device()
-            import base64 as b64mod
-            dev.send_data(b64mod.b64decode(b64))
+            with radio_exclusive():
+                dev = get_device()
+                import base64 as b64mod
+                dev.send_data(b64mod.b64decode(b64))
             log.info("ÉMIS -> %s", _describe(b64, gap))
+        except RadioBusy as exc:
+            return jsonify(error=str(exc)), 409
         except Exception as exc:          # noqa: BLE001
             log.exception("set/send")
             return jsonify(error=str(exc)), 500
@@ -765,6 +851,7 @@ def api_profile():
 
 
 @app.post("/api/profile/import")
+@writes_store
 def api_profile_import():
     """
     Charge un profil : sa carte de bits, son checksum, ses entités.
@@ -838,6 +925,7 @@ def api_profiles():
 
 
 @app.post("/api/device")
+@writes_store
 def set_device():
     """
     Change l'IP du RM4 depuis l'UI, et la persiste.

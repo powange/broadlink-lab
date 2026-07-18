@@ -99,8 +99,16 @@ def device_ip():
 
 def get_device(force=False):
     global _dev
+    # Chemin rapide SANS verrou : la lecture de la référence `_dev` est atomique
+    # sous le GIL. C'est ce qui rend device_snapshot (et donc /api/status)
+    # non-bloquant même quand un autre thread reconnecte — la cause du 504.
+    dev = _dev
+    if dev is not None and not force:
+        return dev
+    # `_dev_lock` ne sérialise QUE la reconnexion (une seule à la fois), il n'est
+    # PAS tenu pendant les 18 s de hello/auth pour les LECTEURS de `_dev`.
     with _dev_lock:
-        if _dev is not None and not force:
+        if _dev is not None and not force:    # un autre a reconnecté entre-temps
             return _dev
         ip = device_ip()
         # Un Broadlink est un appareil WiFi qui dort : le premier paquet le
@@ -149,9 +157,13 @@ def device_snapshot():
     rapporte la dernière session connue ; l'écoute et l'émission, elles, ont le
     droit de bloquer pour (re)connecter, chacune dans son thread.
     """
-    with _dev_lock:
-        if _dev is not None:
-            return {"connected": True, "model": _dev.model, "host": _dev.host[0]}
+    # SANS _dev_lock : lecture atomique de la référence. Prendre le verrou
+    # rendrait ce "snapshot" bloquant derrière une reconnexion de 18 s — le 504
+    # que la fonction est censée éviter. C'est le complément du chemin rapide de
+    # get_device.
+    dev = _dev
+    if dev is not None:
+        return {"connected": True, "model": dev.model, "host": dev.host[0]}
     return {"connected": False,
             "error": "pas encore connecté au Broadlink (ou tentative en cours)"}
 
@@ -308,10 +320,15 @@ class Device:
         data = decoder.encode_packet(durations, pkt["header"], pkt["repeats"],
                                      pkt.get("terminator", True))
         try:
+            # get_device() HORS du verrou radio : il peut bloquer 18 s pour
+            # reconnecter un RM4 endormi. Le tenir sous _radio gèlerait l'écoute
+            # tout ce temps (et, via apply/Device.lock, la pompe MQTT). On paie la
+            # reconnexion avant de saisir la radio, comme l'écoute le fait déjà.
+            dev = get_device()
             with _radio:
                 if _listener is not None:
                     _listener.disarm()
-                get_device().send_data(data)
+                dev.send_data(data)
             log.info("[%s] émis%s -> %s", self.id,
                      " " + repr(require) if require else "", self.state)
             return True

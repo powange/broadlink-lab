@@ -68,6 +68,10 @@ echo "=== 5. profil v2 : requires + semantics (sur vrai signal R00143) ==="
 "$PY" "$HERE/profile_v2_test.py"
 
 echo
+echo "=== 5b. sécurité du store sous concurrence (waitress 8 threads) ==="
+"$PY" "$HERE/store_concurrency_test.py"
+
+echo
 echo "=== 6. déduction automatique des champs (sur vrai signal) ==="
 "$PY" "$HERE/infer_test.py"
 

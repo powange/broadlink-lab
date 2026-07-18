@@ -1,5 +1,17 @@
 # Journal des modifications
 
+## 0.5.6
+
+**Le 504 résiduel et un gel de 18 s, corrigés — suite à une revue de code.**
+
+- **`/api/status` ne peut plus se bloquer 18 s.** Le correctif précédent du 504
+  était incomplet : la lecture de l'état prenait le même verrou que la
+  reconnexion, qui le tient jusqu'à 18 s sur un RM4 endormi. L'état se lit
+  maintenant sans ce verrou ; seule la reconnexion elle-même est sérialisée.
+- **Une émission ne gèle plus l'écoute (ni la pompe MQTT) pendant une
+  reconnexion.** La reconnexion du RM4 se fait désormais avant de saisir la
+  radio, pas pendant qu'on la tient.
+
 ## 0.5.5
 
 **La luminosité s'affiche à sa vraie valeur.** La télécommande réglée à 10 %

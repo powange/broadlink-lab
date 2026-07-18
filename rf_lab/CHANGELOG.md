@@ -1,5 +1,22 @@
 # Journal des modifications
 
+## 0.6.1
+
+**Corrections de fiabilité, issues d'une revue de code.**
+
+- **Le store ne perd plus d'écritures et ne se corrompt plus.** Waitress sert à 8
+  threads ; deux requêtes qui écrivaient en même temps pouvaient s'écraser (perte
+  d'une capture) ou entrelacer leur fichier temporaire (store corrompu, addon
+  mort). Les écritures sont maintenant sérialisées, chaque écriture a son propre
+  fichier temporaire, et un store illisible est mis de côté puis l'outil repart
+  proprement au lieu de renvoyer 500 partout.
+- **On ne peut plus émettre pendant une capture.** Les deux partageaient la même
+  socket UDP du RM4 (non thread-safe) : les paquets pouvaient se mélanger. Une
+  émission demandée pendant une capture est désormais refusée (409) au lieu de
+  corrompre les deux.
+- **Annuler une connexion n'empoisonne plus les captures suivantes** (un drapeau
+  d'annulation restait armé).
+
 ## 0.6.0
 
 **Plusieurs télécommandes dans RF Lab.** Un sélecteur d'appareil dans la barre
